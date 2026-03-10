@@ -35,7 +35,7 @@ Người dùng mục tiêu: Trader crypto đa sàn (Binance, OKX, Bybit, Bitget,
 - Fetch và chuẩn hoá lịch sử giao dịch đã đóng từ các sàn
 - Tính toán realized PNL theo từng giao dịch và tổng hợp theo kỳ (Day / Week / Month / Year / All-time)
 - Hiển thị win rate, tổng số lệnh và số dư portfolio theo sàn
-- **PNL Calendar**: Calendar heatmap hiển thị lợi nhuận theo ngày và theo tháng với điều hướng thời gian
+- PNL Calendar: Calendar heatmap hiển thị lợi nhuận theo ngày và theo tháng với điều hướng thời gian
 - Biểu đồ xu hướng PNL (line chart, Recharts)
 - Tổng số dư quy đổi ra USD
 
@@ -106,7 +106,7 @@ npm install -g pnpm
 ### 1. Clone repository
 
 ```bash
-git clone <repository-url>
+git clone <https://github.com/dui14/track-PNL-pro>
 cd aiTrackProfit
 ```
 
@@ -197,18 +197,12 @@ NEXT_PUBLIC_SUPABASE_URL=https://<your-project>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
 SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
 
-# Encryption (AES-256-GCM master key cho exchange API key storage)
-ENCRYPTION_MASTER_KEY=<32-byte-hex-or-base64-key>
-
 # LLM API (OpenAI, Groq hoặc Anthropic)
 OPENAI_API_KEY=<your-llm-api-key>
 
 # App URL
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
-
-> Biến có `NEXT_PUBLIC_` prefix bị expose ra browser — không dùng cho secrets.
-> `SUPABASE_SERVICE_ROLE_KEY` và `ENCRYPTION_MASTER_KEY` chỉ được dùng server-side.
 
 ---
 
