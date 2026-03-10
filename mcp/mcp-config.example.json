@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://postgres:<DB_PASSWORD>@db.<SUPABASE_PROJECT_REF>.supabase.co:5432/postgres"
+      ],
+      "env": {
+        "SUPABASE_URL": "https://<SUPABASE_PROJECT_REF>.supabase.co",
+        "SUPABASE_SERVICE_ROLE_KEY": "<YOUR_SUPABASE_SERVICE_ROLE_KEY>"
+      },
+      "description": "PostgreSQL MCP trỏ tới Supabase project. Cung cấp truy cập schema, query, và metadata cho AI hiểu backend khi build."
+    }
+  },
+  "_comment": {
+    "setup": "Copy file này thành mcp-config.json và điền đúng credentials từ Supabase Dashboard.",
+    "supabase_dashboard": "https://supabase.com/dashboard/project/<SUPABASE_PROJECT_REF>/settings/api",
+    "tables": [
+      "profiles - thông tin user",
+      "exchange_accounts - các sàn đã kết nối",
+      "api_keys - API key đã mã hóa AES-256",
+      "trades - lịch sử giao dịch thực",
+      "demo_trades - giao dịch demo",
+      "pnl_snapshots - snapshot PNL theo kỳ",
+      "chat_conversations - lịch sử hội thoại AI",
+      "chat_messages - tin nhắn trong hội thoại AI"
+    ]
+  }
+}

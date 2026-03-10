@@ -1,0 +1,172 @@
+export type ApiResponse<T> = {
+  success: boolean
+  data: T | null
+  error: string | null
+  meta?: {
+    page?: number
+    limit?: number
+    total?: number
+  }
+}
+
+export type Result<T, E = string> =
+  | { success: true; data: T }
+  | { success: false; error: E }
+
+export const EXCHANGES = ['binance', 'okx', 'bybit', 'bitget', 'mexc'] as const
+export type Exchange = (typeof EXCHANGES)[number]
+
+export const PERIOD_TYPES = ['day', 'week', 'month', 'year', 'all'] as const
+export type PeriodType = (typeof PERIOD_TYPES)[number]
+
+export const CHART_RANGES = ['day', 'week', 'month', 'year'] as const
+export type ChartRange = (typeof CHART_RANGES)[number]
+
+export type UserProfile = {
+  id: string
+  email: string
+  display_name: string | null
+  avatar_url: string | null
+  demo_balance: number
+  created_at: string
+  updated_at: string
+}
+
+export type ExchangeAccount = {
+  id: string
+  user_id: string
+  exchange: Exchange
+  label: string | null
+  is_active: boolean
+  last_synced: string | null
+  created_at: string
+}
+
+export type ApiKeyRow = {
+  id: string
+  exchange_account_id: string
+  key_encrypted: string
+  secret_encrypted: string
+  key_iv: string
+  secret_iv: string
+  key_version: number
+  created_at: string
+}
+
+export type Trade = {
+  id: string
+  exchange_account_id: string
+  user_id: string
+  external_trade_id: string
+  symbol: string
+  side: 'buy' | 'sell'
+  quantity: number
+  price: number
+  fee: number
+  fee_currency: string | null
+  realized_pnl: number | null
+  trade_type: 'spot' | 'futures' | 'margin'
+  traded_at: string
+  raw_data: Record<string, unknown> | null
+  created_at: string
+}
+
+export type PNLSnapshot = {
+  id: string
+  user_id: string
+  exchange_account_id: string | null
+  period_type: PeriodType
+  period_start: string
+  period_end: string
+  total_pnl: number
+  win_count: number
+  loss_count: number
+  trade_count: number
+  win_rate: number | null
+  best_trade_pnl: number | null
+  worst_trade_pnl: number | null
+  calculated_at: string
+}
+
+export type DemoTrade = {
+  id: string
+  user_id: string
+  symbol: string
+  side: 'buy' | 'sell'
+  order_type: 'market' | 'limit'
+  quantity: number
+  entry_price: number
+  exit_price: number | null
+  realized_pnl: number | null
+  status: 'open' | 'closed' | 'cancelled'
+  opened_at: string
+  closed_at: string | null
+  created_at: string
+}
+
+export type ChatConversation = {
+  id: string
+  user_id: string
+  title: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ChatMessage = {
+  id: string
+  conversation_id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  tokens_used: number | null
+  created_at: string
+}
+
+export type PNLSummary = {
+  total_pnl: number
+  win_rate: number
+  trade_count: number
+  win_count: number
+  loss_count: number
+  best_trade: number | null
+  worst_trade: number | null
+  period: PeriodType
+}
+
+export type PNLChartPoint = {
+  date: string
+  pnl: number
+  cumulative_pnl: number
+}
+
+export type PNLCalendarDay = {
+  date: string
+  pnl: number
+  tradeCount: number
+}
+
+export type PNLCalendarMonth = {
+  year: number
+  month: number
+  pnl: number
+  tradeCount: number
+}
+
+export type ExchangeAdapterTrade = {
+  external_trade_id: string
+  symbol: string
+  side: 'buy' | 'sell'
+  quantity: number
+  price: number
+  fee: number
+  fee_currency: string
+  realized_pnl: number | null
+  trade_type: 'spot' | 'futures' | 'margin'
+  traded_at: string
+  raw_data: Record<string, unknown>
+}
+
+export type SyncResult = {
+  synced_trades: number
+  new_trades: number
+  last_synced: string
+}
