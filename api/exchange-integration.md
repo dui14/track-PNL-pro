@@ -66,12 +66,18 @@ Authentication: HMAC-SHA256 signature
 
 Key endpoints:
 ```
+GET /fapi/v1/income           <- Futures PnL-ready (realized pnl, funding, commission)
+GET /fapi/v1/userTrades       <- Futures trade fallback (7 ngay moi request)
 GET /api/v3/myTrades          <- Spot trade history
-GET /fapi/v1/userTrades       <- Futures trade history
 GET /api/v3/account           <- Spot balances
 GET /fapi/v2/account          <- Futures account + balances
 GET /api/v3/ping              <- Validate credentials
 ```
+
+Sync notes:
+- Uu tien `/fapi/v1/income` cho futures de lay du lieu PnL da tinh san.
+- Spot `myTrades` can chia nho theo time window va tinh PnL thu cong.
+- Futures `userTrades` chi dung fallback khi income khong tra ve.
 
 Rate limits:
 - 1200 request weight per minute
@@ -88,10 +94,16 @@ Authentication: HMAC-SHA256 signature
 
 Key endpoints:
 ```
-GET /api/v5/trade/fills-history    <- Trade history
+GET /api/v5/account/bills          <- Bills gan nhat (phi, funding context)
+GET /api/v5/trade/fills-history    <- Spot fills history
 GET /api/v5/account/balance        <- Account balance
 GET /api/v5/account/config         <- Validate credentials
 ```
+
+Sync notes:
+- Bills co fee day du nhung truong pnl thuong khong dung de tong hop closed pnl chi tiet.
+- Can ket hop fills hoac tu tinh PnL tu giao dich.
+- Auth bat buoc key + secret + passphrase voi chu ky base64 HMAC SHA256.
 
 Rate limits: 20 requests per 2 seconds per endpoint
 

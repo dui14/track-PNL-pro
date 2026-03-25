@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS exchange_accounts (
   exchange     TEXT NOT NULL CHECK (exchange IN ('binance','okx','bybit','bitget','mexc')),
   label        TEXT,
   is_active    BOOLEAN NOT NULL DEFAULT TRUE,
+  sync_status  TEXT NOT NULL DEFAULT 'pending' CHECK (sync_status IN ('pending','syncing','synced','error')),
+  sync_error   TEXT,
   last_synced  TIMESTAMPTZ,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (user_id, exchange)
@@ -34,8 +36,10 @@ CREATE TABLE IF NOT EXISTS api_keys (
   exchange_account_id UUID NOT NULL REFERENCES exchange_accounts(id) ON DELETE CASCADE,
   key_encrypted       TEXT NOT NULL,
   secret_encrypted    TEXT NOT NULL,
+  passphrase_encrypted TEXT,
   key_iv              TEXT NOT NULL,
   secret_iv           TEXT NOT NULL,
+  passphrase_iv       TEXT,
   key_version         INT NOT NULL DEFAULT 1,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
