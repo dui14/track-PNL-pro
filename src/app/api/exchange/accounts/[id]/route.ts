@@ -115,20 +115,23 @@ export async function PUT(
   }
 
   const { id } = await params
-  const { apiKey, apiSecret, label } = parsed.data
+  const { apiKey, apiSecret, passphrase, label } = parsed.data
   const result = await updateExchangeApiKeys(
     supabase,
     user.id,
     id,
     apiKey,
     apiSecret,
+    passphrase,
     label === undefined ? undefined : (label ?? undefined)
   )
 
   if (!result.success) {
     const statusMap: Record<string, number> = {
       NOT_FOUND: 404,
+      PASSPHRASE_REQUIRED: 400,
       INVALID_API_KEY: 400,
+      WITHDRAW_PERMISSION_DETECTED: 400,
       UNSUPPORTED_EXCHANGE: 400,
       INTERNAL_ERROR: 500,
     }

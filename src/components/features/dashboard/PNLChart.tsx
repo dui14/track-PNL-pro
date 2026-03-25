@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { PNLChartPoint } from '@/lib/types'
+import type { PNLChartPoint, TradeSegment } from '@/lib/types'
 
 type ChartRangeOption = { label: string; value: string }
 
@@ -31,14 +31,18 @@ function buildPaths(points: PNLChartPoint[]): { line: string; area: string } {
   return { line, area }
 }
 
-export function PNLChart(): React.JSX.Element {
+type PNLChartProps = {
+  segment: TradeSegment
+}
+
+export function PNLChart({ segment }: PNLChartProps): React.JSX.Element {
   const [range, setRange] = useState('month')
   const [points, setPoints] = useState<PNLChartPoint[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/pnl/chart?range=${range}`)
+    fetch(`/api/pnl/chart?range=${range}&segment=${segment}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.success) setPoints(data.data ?? [])
@@ -46,7 +50,7 @@ export function PNLChart(): React.JSX.Element {
       })
       .catch(() => setPoints([]))
       .finally(() => setLoading(false))
-  }, [range])
+  }, [range, segment])
 
   const { line, area } = buildPaths(points)
   const hasData = points.length >= 2

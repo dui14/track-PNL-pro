@@ -21,6 +21,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     view: searchParams.get('view') ?? undefined,
     year: searchParams.get('year') ?? undefined,
     month: searchParams.get('month') ?? undefined,
+    segment: searchParams.get('segment') ?? undefined,
   })
 
   if (!parsed.success) {
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const { view, year, month } = parsed.data
+  const { view, year, month, segment } = parsed.data
 
   if (view === 'daily' && !month) {
     return NextResponse.json(
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const result = await fetchPNLCalendar(supabase, user.id, view, year, month)
+  const result = await fetchPNLCalendar(supabase, user.id, view, year, month, segment)
 
   if (!result.success) {
     return NextResponse.json({ success: false, data: null, error: result.error }, { status: 500 })

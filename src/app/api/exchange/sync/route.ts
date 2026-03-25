@@ -40,6 +40,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const statusMap: Record<string, number> = {
       NOT_FOUND: 404,
       ACCOUNT_INACTIVE: 400,
+      API_KEY_NOT_FOUND: 404,
+      DECRYPTION_FAILED: 500,
       EXCHANGE_ERROR: 502,
       INTERNAL_ERROR: 500,
     }

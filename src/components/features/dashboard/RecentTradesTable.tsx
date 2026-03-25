@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { Trade } from '@/lib/types'
+import type { Trade, TradeSegment } from '@/lib/types'
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
@@ -16,19 +16,23 @@ function formatNumber(value: number, decimals = 2): string {
   return value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
 
-export function RecentTradesTable(): React.JSX.Element {
+type RecentTradesTableProps = {
+  segment: TradeSegment
+}
+
+export function RecentTradesTable({ segment }: RecentTradesTableProps): React.JSX.Element {
   const [trades, setTrades] = useState<Trade[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/pnl/trades?limit=10')
+    fetch(`/api/pnl/trades?limit=10&segment=${segment}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.success) setTrades(data.data ?? [])
       })
       .catch(() => setTrades([]))
       .finally(() => setLoading(false))
-  }, [])
+  }, [segment])
 
   return (
     <div className="bg-background-light dark:bg-background-dark rounded-xl border border-slate-200 dark:border-primary/20 shadow-sm overflow-hidden">

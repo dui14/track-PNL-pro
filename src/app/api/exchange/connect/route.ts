@@ -4,10 +4,19 @@ import { ConnectExchangeSchema } from '@/lib/validators/exchange'
 import { connectExchange } from '@/lib/services/exchangeService'
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const supabase = await createSupabaseServerClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let supabase
+  let user
+  try {
+    supabase = await createSupabaseServerClient()
+    const authResult = await supabase.auth.getUser()
+    user = authResult.data.user
+  } catch (error) {
+    console.error('[exchange/connect] auth service unavailable:', error)
+    return NextResponse.json(
+      { success: false, data: null, error: 'AUTH_SERVICE_UNAVAILABLE' },
+      { status: 503 }
+    )
+  }
 
   if (!user) {
     return NextResponse.json(
@@ -34,13 +43,48 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const { exchange, apiKey, apiSecret, label } = parsed.data
-  const result = await connectExchange(supabase, user.id, exchange, apiKey, apiSecret, label)
+  const { exchange, apiKey, apiSecret, passphrase, label } = parsed.data
+
+  if (!process.env.ENCRYPTION_MASTER_KEY) {
+    return NextResponse.json(
+      { success: false, data: null, error: 'ENCRYPTION_NOT_CONFIGURED' },
+      { status: 500 }
+    )
+  }
+
+  let result
+  try {
+    result = await connectExchange(
+      supabase,
+      user.id,
+      exchange,
+      apiKey,
+      apiSecret,
+      passphrase,
+      label
+    )
+  } catch (error) {
+    console.error('[exchange/connect] unexpected error:', error)
+
+    const isEncryptionError =
+      error instanceof Error && error.message.includes('ENCRYPTION_MASTER_KEY')
+
+    return NextResponse.json(
+      {
+        success: false,
+        data: null,
+        error: isEncryptionError ? 'ENCRYPTION_NOT_CONFIGURED' : 'INTERNAL_ERROR',
+      },
+      { status: 500 }
+    )
+  }
 
   if (!result.success) {
     const statusMap: Record<string, number> = {
       CONFLICT: 409,
+      PASSPHRASE_REQUIRED: 400,
       INVALID_API_KEY: 400,
+      WITHDRAW_PERMISSION_DETECTED: 400,
       UNSUPPORTED_EXCHANGE: 400,
       INTERNAL_ERROR: 500,
     }

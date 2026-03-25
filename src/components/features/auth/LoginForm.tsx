@@ -64,11 +64,15 @@ export function LoginForm(): React.JSX.Element {
     setAuthError(null)
     const supabase = createSupabaseBrowserClient()
     const { error } = await supabase.auth.signInWithPassword({
-      email: data.email,
+      email: data.email.trim().toLowerCase(),
       password: data.password,
     })
     if (error) {
-      setAuthError(error.message)
+      if (error.message.toLowerCase().includes('invalid login credentials')) {
+        setAuthError('Email hoặc mật khẩu không đúng, hoặc tài khoản chưa xác thực email.')
+      } else {
+        setAuthError(error.message)
+      }
       return
     }
     router.push('/dashboard')

@@ -22,6 +22,9 @@ export type PeriodType = (typeof PERIOD_TYPES)[number]
 export const CHART_RANGES = ['day', 'week', 'month', 'year'] as const
 export type ChartRange = (typeof CHART_RANGES)[number]
 
+export const TRADE_SEGMENTS = ['all', 'spot', 'futures'] as const
+export type TradeSegment = (typeof TRADE_SEGMENTS)[number]
+
 export type UserProfile = {
   id: string
   email: string
@@ -32,14 +35,30 @@ export type UserProfile = {
   updated_at: string
 }
 
+export const SYNC_STATUSES = ['pending', 'syncing', 'synced', 'error'] as const
+export type SyncStatus = (typeof SYNC_STATUSES)[number]
+
 export type ExchangeAccount = {
   id: string
   user_id: string
   exchange: Exchange
   label: string | null
   is_active: boolean
+  sync_status: SyncStatus
+  sync_error: string | null
   last_synced: string | null
   created_at: string
+}
+
+export type ExchangeAccountWithStats = ExchangeAccount & {
+  trade_count: number
+  has_passphrase: boolean
+}
+
+export type ExchangeCredentials = {
+  apiKey: string
+  apiSecret: string
+  passphrase?: string
 }
 
 export type ApiKeyRow = {
@@ -47,8 +66,10 @@ export type ApiKeyRow = {
   exchange_account_id: string
   key_encrypted: string
   secret_encrypted: string
+  passphrase_encrypted: string | null
   key_iv: string
   secret_iv: string
+  passphrase_iv: string | null
   key_version: number
   created_at: string
 }
@@ -65,6 +86,8 @@ export type Trade = {
   fee: number
   fee_currency: string | null
   realized_pnl: number | null
+  funding_fee: number
+  income_type: string | null
   trade_type: 'spot' | 'futures' | 'margin'
   traded_at: string
   raw_data: Record<string, unknown> | null
@@ -151,6 +174,24 @@ export type PNLCalendarMonth = {
   tradeCount: number
 }
 
+export type DashboardOverview = {
+  pnl: {
+    today: number
+    d7: number
+    d30: number
+    d90: number
+  }
+  winRate: {
+    d7: number
+    d30: number
+    d90: number
+  }
+  totalTrades: {
+    count: number
+    volumeUsd: number
+  }
+}
+
 export type ExchangeAdapterTrade = {
   external_trade_id: string
   symbol: string
@@ -160,9 +201,44 @@ export type ExchangeAdapterTrade = {
   fee: number
   fee_currency: string
   realized_pnl: number | null
+  funding_fee?: number
+  income_type?: string | null
   trade_type: 'spot' | 'futures' | 'margin'
   traded_at: string
   raw_data: Record<string, unknown>
+}
+
+export type AssetBalance = {
+  asset: string
+  free: number
+  locked: number
+  usdValue: number
+}
+
+export type UnrealizedPosition = {
+  symbol: string
+  side: 'long' | 'short'
+  size: number
+  entryPrice: number
+  markPrice: number
+  unrealizedPnl: number
+  leverage: number
+  tradeType: 'futures'
+}
+
+export type ExchangeBalanceResult = {
+  exchange_account_id: string
+  exchange: Exchange
+  total_usd: number
+  assets: AssetBalance[]
+  fetched_at: string
+}
+
+export type ExchangePositionsResult = {
+  exchange_account_id: string
+  total_unrealized_pnl: number
+  positions: UnrealizedPosition[]
+  fetched_at: string
 }
 
 export type SyncResult = {

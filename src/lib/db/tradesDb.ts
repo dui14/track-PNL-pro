@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Trade, ExchangeAdapterTrade } from '@/lib/types'
 
+type TradeTypeFilter = 'spot' | 'futures'
+
 export async function upsertTrades(
   supabase: SupabaseClient,
   exchangeAccountId: string,
@@ -20,6 +22,8 @@ export async function upsertTrades(
     fee: t.fee,
     fee_currency: t.fee_currency,
     realized_pnl: t.realized_pnl,
+    funding_fee: t.funding_fee ?? 0,
+    income_type: t.income_type ?? null,
     trade_type: t.trade_type,
     traded_at: t.traded_at,
     raw_data: t.raw_data,
@@ -61,6 +65,7 @@ export async function getTrades(
     limit: number
     exchangeAccountId?: string
     symbol?: string
+    tradeType?: TradeTypeFilter
   }
 ): Promise<{ trades: Trade[]; total: number }> {
   const offset = (options.page - 1) * options.limit
@@ -81,6 +86,9 @@ export async function getTrades(
   if (options.symbol) {
     query = query.ilike('symbol', `%${options.symbol}%`)
   }
+  if (options.tradeType) {
+    query = query.eq('trade_type', options.tradeType)
+  }
 
   const { data, error, count } = await query
   if (error) {
@@ -97,6 +105,7 @@ export async function getTradesForPNL(
     startDate?: string
     endDate?: string
     exchangeAccountId?: string
+    tradeType?: TradeTypeFilter
   }
 ): Promise<Trade[]> {
   let query = supabase
@@ -114,6 +123,9 @@ export async function getTradesForPNL(
   if (options.exchangeAccountId) {
     query = query.eq('exchange_account_id', options.exchangeAccountId)
   }
+  if (options.tradeType) {
+    query = query.eq('trade_type', options.tradeType)
+  }
 
   const { data, error } = await query
   if (error) {
@@ -121,4 +133,43 @@ export async function getTradesForPNL(
     return []
   }
   return (data ?? []) as Trade[]
+}
+
+export async function getTradeTotals(
+  supabase: SupabaseClient,
+  userId: string,
+  options: {
+    exchangeAccountId?: string
+    tradeType?: TradeTypeFilter
+  }
+): Promise<{ count: number; volumeUsd: number }> {
+  let query = supabase
+    .from('trades')
+    .select('quantity, price', { count: 'exact' })
+    .eq('user_id', userId)
+
+  if (options.exchangeAccountId) {
+    query = query.eq('exchange_account_id', options.exchangeAccountId)
+  }
+  if (options.tradeType) {
+    query = query.eq('trade_type', options.tradeType)
+  }
+
+  const { data, error, count } = await query
+
+  if (error) {
+    console.error('[tradesDb] getTradeTotals failed:', error.message)
+    return { count: 0, volumeUsd: 0 }
+  }
+
+  const volumeUsd = (data ?? []).reduce((total, row) => {
+    const quantity = Number(row.quantity ?? 0)
+    const price = Number(row.price ?? 0)
+    return total + quantity * price
+  }, 0)
+
+  return {
+    count: count ?? 0,
+    volumeUsd: parseFloat(volumeUsd.toFixed(8)),
+  }
 }

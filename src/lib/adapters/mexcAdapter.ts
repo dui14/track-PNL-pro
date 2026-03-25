@@ -1,5 +1,10 @@
 import { createHmac } from 'crypto'
-import type { ExchangeAdapterTrade } from '@/lib/types'
+import type {
+  ExchangeAdapterTrade,
+  ExchangeCredentials,
+  AssetBalance,
+  UnrealizedPosition,
+} from '@/lib/types'
 import type { ExchangeAdapter } from './exchangeFactory'
 
 const BASE_URL = 'https://api.mexc.com'
@@ -38,15 +43,15 @@ async function fetchWithRetry(
 }
 
 export class MEXCAdapter implements ExchangeAdapter {
-  async validateApiKey(apiKey: string, apiSecret: string): Promise<boolean> {
+  async validateCredentials(credentials: ExchangeCredentials): Promise<boolean> {
     try {
       const timestamp = Date.now()
       const queryString = `timestamp=${timestamp}`
-      const signature = sign(queryString, apiSecret)
+      const signature = sign(queryString, credentials.apiSecret)
 
       const response = await fetchWithRetry(
         `${BASE_URL}/api/v3/account?${queryString}&signature=${signature}`,
-        { headers: { 'X-MEXC-APIKEY': apiKey } }
+        { headers: { 'X-MEXC-APIKEY': credentials.apiKey } }
       )
 
       return response.ok
@@ -55,9 +60,13 @@ export class MEXCAdapter implements ExchangeAdapter {
     }
   }
 
+  async hasWithdrawPermission(credentials: ExchangeCredentials): Promise<boolean> {
+    void credentials
+    return false
+  }
+
   async fetchTrades(
-    apiKey: string,
-    apiSecret: string,
+    credentials: ExchangeCredentials,
     since?: Date
   ): Promise<ExchangeAdapterTrade[]> {
     const timestamp = Date.now()
@@ -68,10 +77,10 @@ export class MEXCAdapter implements ExchangeAdapter {
       startTime: String(startTime),
       timestamp: String(timestamp),
     })
-    params.append('signature', sign(params.toString(), apiSecret))
+    params.append('signature', sign(params.toString(), credentials.apiSecret))
 
     const response = await fetchWithRetry(`${BASE_URL}/api/v3/myTrades?${params}`, {
-      headers: { 'X-MEXC-APIKEY': apiKey },
+      headers: { 'X-MEXC-APIKEY': credentials.apiKey },
     })
 
     if (!response.ok) return []
@@ -96,29 +105,40 @@ export class MEXCAdapter implements ExchangeAdapter {
     }
   }
 
-  async fetchBalance(
-    apiKey: string,
-    apiSecret: string
-  ): Promise<Record<string, number>> {
+  async fetchOpenPositions(credentials: ExchangeCredentials): Promise<UnrealizedPosition[]> {
+    void credentials
+    return []
+  }
+
+  async fetchBalances(credentials: ExchangeCredentials): Promise<AssetBalance[]> {
     const timestamp = Date.now()
     const queryString = `timestamp=${timestamp}`
-    const signature = sign(queryString, apiSecret)
+    const signature = sign(queryString, credentials.apiSecret)
 
     const response = await fetchWithRetry(
       `${BASE_URL}/api/v3/account?${queryString}&signature=${signature}`,
-      { headers: { 'X-MEXC-APIKEY': apiKey } }
+      { headers: { 'X-MEXC-APIKEY': credentials.apiKey } }
     )
 
-    if (!response.ok) return {}
+    if (!response.ok) return []
 
     const data = (await response.json()) as {
       balances: { asset: string; free: string; locked: string }[]
     }
-    const result: Record<string, number> = {}
+    const result: AssetBalance[] = []
 
     for (const b of data.balances) {
-      const total = parseFloat(b.free) + parseFloat(b.locked)
-      if (total > 0) result[b.asset] = total
+      const free = parseFloat(b.free)
+      const locked = parseFloat(b.locked)
+      const total = free + locked
+      if (total > 0) {
+        result.push({
+          asset: b.asset,
+          free,
+          locked,
+          usdValue: 0,
+        })
+      }
     }
     return result
   }

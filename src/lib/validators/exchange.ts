@@ -3,9 +3,22 @@ import { EXCHANGES } from '@/lib/types'
 
 export const ConnectExchangeSchema = z.object({
   exchange: z.enum(EXCHANGES),
-  apiKey: z.string().min(1).trim(),
-  apiSecret: z.string().min(1).trim(),
-  label: z.string().min(1).max(100).optional(),
+  apiKey: z.string().trim().min(10).max(512).refine((value) => !/\s/.test(value), {
+    message: 'API_KEY_INVALID',
+  }),
+  apiSecret: z.string().trim().min(10).max(512).refine((value) => !/\s/.test(value), {
+    message: 'API_SECRET_INVALID',
+  }),
+  passphrase: z.string().trim().min(1).max(100).optional(),
+  label: z.string().trim().min(1).max(50).optional(),
+}).superRefine((data, ctx) => {
+  if ((data.exchange === 'okx' || data.exchange === 'bitget') && !data.passphrase) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'PASSPHRASE_REQUIRED',
+      path: ['passphrase'],
+    })
+  }
 })
 
 export const SyncExchangeSchema = z.object({
@@ -17,9 +30,14 @@ export const UpdateExchangeActiveSchema = z.object({
 })
 
 export const UpdateExchangeKeysSchema = z.object({
-  apiKey: z.string().min(1).trim(),
-  apiSecret: z.string().min(1).trim(),
-  label: z.string().max(100).nullable().optional(),
+  apiKey: z.string().trim().min(10).max(512).refine((value) => !/\s/.test(value), {
+    message: 'API_KEY_INVALID',
+  }),
+  apiSecret: z.string().trim().min(10).max(512).refine((value) => !/\s/.test(value), {
+    message: 'API_SECRET_INVALID',
+  }),
+  passphrase: z.string().trim().min(1).max(100).optional(),
+  label: z.string().max(50).nullable().optional(),
 })
 
 export type ConnectExchangeInput = z.infer<typeof ConnectExchangeSchema>

@@ -214,6 +214,7 @@ function ConnectModal({
   label,
   apiKey,
   apiSecret,
+  passphrase,
   isSubmitting,
   submitError,
   connectedExchanges,
@@ -221,6 +222,7 @@ function ConnectModal({
   onLabelChange,
   onApiKeyChange,
   onApiSecretChange,
+  onPassphraseChange,
   onNext,
   onBack,
   onClose,
@@ -231,6 +233,7 @@ function ConnectModal({
   label: string
   apiKey: string
   apiSecret: string
+  passphrase: string
   isSubmitting: boolean
   submitError: string | null
   connectedExchanges: string[]
@@ -238,6 +241,7 @@ function ConnectModal({
   onLabelChange: (v: string) => void
   onApiKeyChange: (v: string) => void
   onApiSecretChange: (v: string) => void
+  onPassphraseChange: (v: string) => void
   onNext: () => void
   onBack: () => void
   onClose: () => void
@@ -246,11 +250,13 @@ function ConnectModal({
   const selectedExchangeName =
     EXCHANGE_OPTIONS.find((e) => e.id === selectedExchange)?.name ?? selectedExchange ?? ''
 
+  const requiresPassphrase = selectedExchange === 'okx' || selectedExchange === 'bitget'
+
   const canNext =
     step === 1
       ? !!selectedExchange
       : step === 2
-      ? apiKey.trim().length > 0 && apiSecret.trim().length > 0
+      ? apiKey.trim().length > 0 && apiSecret.trim().length > 0 && (!requiresPassphrase || passphrase.trim().length > 0)
       : true
 
   return (
@@ -396,6 +402,8 @@ function ConnectModal({
                   value={apiKey}
                   onChange={(e) => onApiKeyChange(e.target.value)}
                   placeholder="Paste your API key here"
+                  autoComplete="off"
+                  spellCheck={false}
                   className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-primary focus:border-primary transition-all outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
                 />
               </div>
@@ -408,9 +416,27 @@ function ConnectModal({
                   value={apiSecret}
                   onChange={(e) => onApiSecretChange(e.target.value)}
                   placeholder="Paste your API secret here"
+                  autoComplete="new-password"
+                  spellCheck={false}
                   className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-primary focus:border-primary transition-all outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
                 />
               </div>
+              {requiresPassphrase && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Passphrase <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={passphrase}
+                    onChange={(e) => onPassphraseChange(e.target.value)}
+                    placeholder="Paste your exchange passphrase"
+                    autoComplete="new-password"
+                    spellCheck={false}
+                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-primary focus:border-primary transition-all outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                  />
+                </div>
+              )}
               <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 flex gap-2 text-amber-600 dark:text-amber-400">
                 <span className="material-symbols-outlined text-[16px] flex-shrink-0 mt-0.5">shield_lock</span>
                 <p className="text-xs">
@@ -568,6 +594,7 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
   const [label, setLabel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [apiSecret, setApiSecret] = useState('')
+  const [passphrase, setPassphrase] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -599,6 +626,7 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
     setLabel('')
     setApiKey('')
     setApiSecret('')
+    setPassphrase('')
     setSubmitError(null)
     setModalOpen(true)
   }
@@ -610,6 +638,7 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
     setLabel(account.label ?? '')
     setApiKey('')
     setApiSecret('')
+    setPassphrase('')
     setSubmitError(null)
     setStep(2)
     setModalOpen(true)
@@ -622,6 +651,7 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
     setLabel('')
     setApiKey('')
     setApiSecret('')
+    setPassphrase('')
     setSubmitError(null)
   }
 
@@ -631,7 +661,8 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
       return
     }
     if (step === 2) {
-      if (!selectedExchange || !apiKey.trim() || !apiSecret.trim()) return
+      const requiresPassphrase = selectedExchange === 'okx' || selectedExchange === 'bitget'
+      if (!selectedExchange || !apiKey.trim() || !apiSecret.trim() || (requiresPassphrase && !passphrase.trim())) return
       setIsSubmitting(true)
       setSubmitError(null)
       try {
@@ -643,6 +674,7 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
             body: JSON.stringify({
               apiKey: apiKey.trim(),
               apiSecret: apiSecret.trim(),
+              passphrase: passphrase.trim() || undefined,
               label: label.trim() || null,
             }),
           })
@@ -654,6 +686,7 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
               exchange: selectedExchange,
               apiKey: apiKey.trim(),
               apiSecret: apiSecret.trim(),
+              passphrase: passphrase.trim() || undefined,
               label: label.trim() || null,
             }),
           })
@@ -666,6 +699,8 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
           const errorMessages: Record<string, string> = {
             CONFLICT: 'This exchange is already connected.',
             INVALID_API_KEY: 'Invalid API key or secret. Please check your credentials.',
+            PASSPHRASE_REQUIRED: 'Passphrase is required for this exchange.',
+            WITHDRAW_PERMISSION_DETECTED: 'Please use read-only API keys without withdrawal permission.',
             UNSUPPORTED_EXCHANGE: 'This exchange is not supported.',
             VALIDATION_ERROR: 'Please check your input and try again.',
           }
@@ -809,6 +844,7 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
           label={label}
           apiKey={apiKey}
           apiSecret={apiSecret}
+          passphrase={passphrase}
           isSubmitting={isSubmitting}
           submitError={submitError}
           connectedExchanges={connectedExchangeIds}
@@ -816,6 +852,7 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
           onLabelChange={setLabel}
           onApiKeyChange={setApiKey}
           onApiSecretChange={setApiSecret}
+          onPassphraseChange={setPassphrase}
           onNext={handleNext}
           onBack={handleBack}
           onClose={closeModal}

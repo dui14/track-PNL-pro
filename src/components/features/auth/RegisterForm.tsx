@@ -88,11 +88,11 @@ export function RegisterForm(): React.JSX.Element {
     setAuthError(null)
     const supabase = createSupabaseBrowserClient()
     const { error } = await supabase.auth.signUp({
-      email: data.email,
+      email: data.email.trim().toLowerCase(),
       password: data.password,
       options: {
         data: { display_name: data.displayName },
-        emailRedirectTo: `${window.location.origin}/api/auth/callback`,
+        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=/dashboard`,
       },
     })
     if (error) {

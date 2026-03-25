@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import type { PNLCalendarDay, PNLCalendarMonth } from '@/lib/types'
+import type { PNLCalendarDay, PNLCalendarMonth, TradeSegment } from '@/lib/types'
 
 type CalendarView = 'daily' | 'monthly'
 
@@ -50,7 +50,11 @@ function pnlColor(pnl: number, hasData: boolean): string {
   return 'text-slate-400'
 }
 
-export function PNLCalendar(): React.JSX.Element {
+type PNLCalendarProps = {
+  segment: TradeSegment
+}
+
+export function PNLCalendar({ segment }: PNLCalendarProps): React.JSX.Element {
   const now = new Date()
   const [view, setView] = useState<CalendarView>('daily')
   const [year, setYear] = useState(now.getFullYear())
@@ -61,7 +65,7 @@ export function PNLCalendar(): React.JSX.Element {
 
   const fetchCalendarData = useCallback(async (): Promise<void> => {
     setLoading(true)
-    const params = new URLSearchParams({ view, year: String(year) })
+    const params = new URLSearchParams({ view, year: String(year), segment })
     if (view === 'daily') params.set('month', String(month))
 
     try {
@@ -78,7 +82,7 @@ export function PNLCalendar(): React.JSX.Element {
     } finally {
       setLoading(false)
     }
-  }, [view, year, month])
+  }, [view, year, month, segment])
 
   useEffect(() => {
     fetchCalendarData()

@@ -1,16 +1,23 @@
-import type { ExchangeAdapterTrade } from '@/lib/types'
+import type {
+  ExchangeAdapterTrade,
+  ExchangeCredentials,
+  AssetBalance,
+  UnrealizedPosition,
+} from '@/lib/types'
 
 export interface ExchangeAdapter {
-  validateApiKey(apiKey: string, apiSecret: string): Promise<boolean>
+  validateCredentials(credentials: ExchangeCredentials): Promise<boolean>
+  hasWithdrawPermission(credentials: ExchangeCredentials): Promise<boolean>
   fetchTrades(
-    apiKey: string,
-    apiSecret: string,
+    credentials: ExchangeCredentials,
     since?: Date
   ): Promise<ExchangeAdapterTrade[]>
-  fetchBalance(
-    apiKey: string,
-    apiSecret: string
-  ): Promise<Record<string, number>>
+  fetchOpenPositions(
+    credentials: ExchangeCredentials
+  ): Promise<UnrealizedPosition[]>
+  fetchBalances(
+    credentials: ExchangeCredentials
+  ): Promise<AssetBalance[]>
 }
 
 export async function createExchangeAdapter(exchange: string): Promise<ExchangeAdapter> {

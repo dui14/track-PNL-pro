@@ -14,37 +14,14 @@ const PROTECTED_ROUTES = [
   '/api/profile',
 ]
 
+const PUBLIC_API_ROUTES = ['/api/exchange/debug/verify']
+
 const AUTH_ROUTES = ['/login', '/register']
 
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   let response = NextResponse.next({ request })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          )
-          response = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
   const { pathname } = request.nextUrl
+  const isPublicApiRoute = PUBLIC_API_ROUTES.some((route) => pathname.startsWith(route))
 
   const isApiRoute = pathname.startsWith('/api/')
   if (isApiRoute && request.method !== 'GET' && request.method !== 'HEAD') {
@@ -57,10 +34,60 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  if (isPublicApiRoute) {
+    return response
+  }
+
+  let user: { id: string } | null = null
+  let authUnavailable = false
+
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll()
+          },
+          setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+            cookiesToSet.forEach(({ name, value }) =>
+              request.cookies.set(name, value)
+            )
+            response = NextResponse.next({ request })
+            cookiesToSet.forEach(({ name, value, options }) =>
+              response.cookies.set(name, value, options)
+            )
+          },
+        },
+      }
+    )
+
+    const authResult = await supabase.auth.getUser()
+    user = authResult.data.user
+  } catch (error) {
+    authUnavailable = true
+    console.error('[middleware] auth check failed', error)
+  }
+
   const isProtected = PROTECTED_ROUTES.some((route) => pathname.startsWith(route))
   const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route))
 
-  if (isProtected && !user) {
+  if (isProtected && !user && authUnavailable && isApiRoute) {
+    return NextResponse.json(
+      { success: false, data: null, error: 'AUTH_SERVICE_UNAVAILABLE' },
+      { status: 503 }
+    )
+  }
+
+  if (isProtected && !user && isApiRoute && !isPublicApiRoute) {
+    return NextResponse.json(
+      { success: false, data: null, error: 'UNAUTHORIZED' },
+      { status: 401 }
+    )
+  }
+
+  if (isProtected && !user && !isApiRoute) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('next', pathname)
     return NextResponse.redirect(loginUrl)

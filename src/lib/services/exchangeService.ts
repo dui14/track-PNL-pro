@@ -1,5 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { ExchangeAccount, SyncResult, Result } from '@/lib/types'
+import type {
+  ExchangeAccount,
+  ExchangeAccountWithStats,
+  SyncResult,
+  Result,
+  ExchangeCredentials,
+  ExchangeBalanceResult,
+  ExchangePositionsResult,
+} from '@/lib/types'
 import {
   createExchangeAccount,
   createApiKey,
@@ -11,10 +19,13 @@ import {
   updateLastSynced,
   updateExchangeActive,
   updateApiKeyRecord,
+  updateSyncStatus,
 } from '@/lib/db/exchangeDb'
-import { upsertTrades, getTradeCount } from '@/lib/db/tradesDb'
+import { upsertTrades } from '@/lib/db/tradesDb'
 import { encrypt, decrypt } from '@/lib/adapters/encryption'
 import { createExchangeAdapter } from '@/lib/adapters/exchangeFactory'
+
+const MAX_SYNC_LOOKBACK_MS = 360 * 24 * 60 * 60 * 1000
 
 export async function connectExchange(
   supabase: SupabaseClient,
@@ -22,8 +33,13 @@ export async function connectExchange(
   exchange: string,
   apiKey: string,
   apiSecret: string,
+  passphrase?: string,
   label?: string
 ): Promise<Result<ExchangeAccount>> {
+  if ((exchange === 'okx' || exchange === 'bitget') && !passphrase) {
+    return { success: false, error: 'PASSPHRASE_REQUIRED' }
+  }
+
   const exists = await exchangeAccountExists(supabase, userId, exchange)
   if (exists) {
     return { success: false, error: 'CONFLICT' }
@@ -36,13 +52,25 @@ export async function connectExchange(
     return { success: false, error: 'UNSUPPORTED_EXCHANGE' }
   }
 
-  const isValid = await adapter.validateApiKey(apiKey, apiSecret)
+  const credentials: ExchangeCredentials = {
+    apiKey,
+    apiSecret,
+    passphrase,
+  }
+
+  const isValid = await adapter.validateCredentials(credentials)
   if (!isValid) {
     return { success: false, error: 'INVALID_API_KEY' }
   }
 
+  const hasWithdrawPermission = await adapter.hasWithdrawPermission(credentials)
+  if (hasWithdrawPermission) {
+    return { success: false, error: 'WITHDRAW_PERMISSION_DETECTED' }
+  }
+
   const encryptedKey = encrypt(apiKey)
   const encryptedSecret = encrypt(apiSecret)
+  const encryptedPassphrase = passphrase ? encrypt(passphrase) : null
 
   const account = await createExchangeAccount(supabase, userId, exchange, label ?? null)
   if (!account) {
@@ -57,7 +85,9 @@ export async function connectExchange(
     encryptedKey.encrypted,
     encryptedSecret.encrypted,
     encryptedKey.iv,
-    encryptedSecret.iv
+    encryptedSecret.iv,
+    encryptedPassphrase?.encrypted ?? null,
+    encryptedPassphrase?.iv ?? null
   )
   if (!keyCreated) {
     return { success: false, error: 'INTERNAL_ERROR' }
@@ -69,7 +99,7 @@ export async function connectExchange(
 export async function listExchangeAccounts(
   supabase: SupabaseClient,
   userId: string
-): Promise<Result<ExchangeAccount[]>> {
+): Promise<Result<ExchangeAccountWithStats[]>> {
   const accounts = await getExchangeAccounts(supabase, userId)
   return { success: true, data: accounts }
 }
@@ -88,38 +118,39 @@ export async function syncExchangeAccount(
     return { success: false, error: 'ACCOUNT_INACTIVE' }
   }
 
+  await updateSyncStatus(supabase, exchangeAccountId, 'syncing', null)
+
   const serviceSupabase = (await import('@/lib/db/supabase-server')).createSupabaseServiceClient()
   const apiKeyRow = await getApiKey(serviceSupabase, exchangeAccountId)
   if (!apiKeyRow) {
     return { success: false, error: 'API_KEY_NOT_FOUND' }
   }
 
-  let decryptedKey: string
-  let decryptedSecret: string
-
-  try {
-    decryptedKey = decrypt(apiKeyRow.key_encrypted, apiKeyRow.key_iv)
-    decryptedSecret = decrypt(apiKeyRow.secret_encrypted, apiKeyRow.secret_iv)
-  } catch {
+  const credentials = decryptCredentials(apiKeyRow)
+  if (!credentials) {
+    await updateSyncStatus(supabase, exchangeAccountId, 'error', 'DECRYPTION_FAILED')
     return { success: false, error: 'DECRYPTION_FAILED' }
   }
 
   const adapter = await createExchangeAdapter(account.exchange)
-  const since = account.last_synced ? new Date(account.last_synced) : undefined
+  const maxLookbackDate = new Date(Date.now() - MAX_SYNC_LOOKBACK_MS)
+  const since = account.last_synced
+    ? new Date(Math.max(new Date(account.last_synced).getTime(), maxLookbackDate.getTime()))
+    : maxLookbackDate
 
   let trades
   try {
-    trades = await adapter.fetchTrades(decryptedKey, decryptedSecret, since)
+    trades = await adapter.fetchTrades(credentials, since)
   } catch (err) {
     console.error('[exchangeService] fetchTrades failed:', err)
+    await updateSyncStatus(supabase, exchangeAccountId, 'error', 'EXCHANGE_ERROR')
     return { success: false, error: 'EXCHANGE_ERROR' }
   }
 
-  const prevCount = await getTradeCount(serviceSupabase, exchangeAccountId)
   const newTrades = await upsertTrades(serviceSupabase, exchangeAccountId, userId, trades)
   const lastSynced = new Date().toISOString()
 
-  await updateLastSynced(supabase, exchangeAccountId)
+  await updateLastSynced(supabase, exchangeAccountId, 'synced', null)
 
   return {
     success: true,
@@ -174,11 +205,16 @@ export async function updateExchangeApiKeys(
   accountId: string,
   apiKey: string,
   apiSecret: string,
+  passphrase?: string,
   label?: string
 ): Promise<Result<ExchangeAccount>> {
   const account = await getExchangeAccountById(supabase, accountId, userId)
   if (!account) {
     return { success: false, error: 'NOT_FOUND' }
+  }
+
+  if ((account.exchange === 'okx' || account.exchange === 'bitget') && !passphrase) {
+    return { success: false, error: 'PASSPHRASE_REQUIRED' }
   }
 
   let adapter
@@ -188,13 +224,25 @@ export async function updateExchangeApiKeys(
     return { success: false, error: 'UNSUPPORTED_EXCHANGE' }
   }
 
-  const isValid = await adapter.validateApiKey(apiKey, apiSecret)
+  const credentials: ExchangeCredentials = {
+    apiKey,
+    apiSecret,
+    passphrase,
+  }
+
+  const isValid = await adapter.validateCredentials(credentials)
   if (!isValid) {
     return { success: false, error: 'INVALID_API_KEY' }
   }
 
+  const hasWithdrawPermission = await adapter.hasWithdrawPermission(credentials)
+  if (hasWithdrawPermission) {
+    return { success: false, error: 'WITHDRAW_PERMISSION_DETECTED' }
+  }
+
   const encryptedKey = encrypt(apiKey)
   const encryptedSecret = encrypt(apiSecret)
+  const encryptedPassphrase = passphrase ? encrypt(passphrase) : null
 
   const serviceSupabase = (await import('@/lib/db/supabase-server')).createSupabaseServiceClient()
 
@@ -204,7 +252,9 @@ export async function updateExchangeApiKeys(
     encryptedKey.encrypted,
     encryptedSecret.encrypted,
     encryptedKey.iv,
-    encryptedSecret.iv
+    encryptedSecret.iv,
+    encryptedPassphrase?.encrypted ?? null,
+    encryptedPassphrase?.iv ?? null
   )
   if (!keyUpdated) {
     return { success: false, error: 'INTERNAL_ERROR' }
@@ -220,4 +270,111 @@ export async function updateExchangeApiKeys(
 
   const updated = await getExchangeAccountById(supabase, accountId, userId)
   return { success: true, data: updated ?? account }
+}
+
+export async function fetchExchangeBalance(
+  supabase: SupabaseClient,
+  userId: string,
+  exchangeAccountId: string
+): Promise<Result<ExchangeBalanceResult>> {
+  const account = await getExchangeAccountById(supabase, exchangeAccountId, userId)
+  if (!account) {
+    return { success: false, error: 'NOT_FOUND' }
+  }
+
+  if (!account.is_active) {
+    return { success: false, error: 'ACCOUNT_INACTIVE' }
+  }
+
+  const serviceSupabase = (await import('@/lib/db/supabase-server')).createSupabaseServiceClient()
+  const apiKeyRow = await getApiKey(serviceSupabase, exchangeAccountId)
+  if (!apiKeyRow) {
+    return { success: false, error: 'API_KEY_NOT_FOUND' }
+  }
+
+  const credentials = decryptCredentials(apiKeyRow)
+  if (!credentials) {
+    return { success: false, error: 'DECRYPTION_FAILED' }
+  }
+
+  const adapter = await createExchangeAdapter(account.exchange)
+  const assets = await adapter.fetchBalances(credentials)
+  const totalUsd = assets.reduce((sum, asset) => sum + asset.usdValue, 0)
+
+  return {
+    success: true,
+    data: {
+      exchange_account_id: exchangeAccountId,
+      exchange: account.exchange,
+      total_usd: totalUsd,
+      assets,
+      fetched_at: new Date().toISOString(),
+    },
+  }
+}
+
+export async function fetchExchangePositions(
+  supabase: SupabaseClient,
+  userId: string,
+  exchangeAccountId: string
+): Promise<Result<ExchangePositionsResult>> {
+  const account = await getExchangeAccountById(supabase, exchangeAccountId, userId)
+  if (!account) {
+    return { success: false, error: 'NOT_FOUND' }
+  }
+
+  if (!account.is_active) {
+    return { success: false, error: 'ACCOUNT_INACTIVE' }
+  }
+
+  const serviceSupabase = (await import('@/lib/db/supabase-server')).createSupabaseServiceClient()
+  const apiKeyRow = await getApiKey(serviceSupabase, exchangeAccountId)
+  if (!apiKeyRow) {
+    return { success: false, error: 'API_KEY_NOT_FOUND' }
+  }
+
+  const credentials = decryptCredentials(apiKeyRow)
+  if (!credentials) {
+    return { success: false, error: 'DECRYPTION_FAILED' }
+  }
+
+  const adapter = await createExchangeAdapter(account.exchange)
+  const positions = await adapter.fetchOpenPositions(credentials)
+  const totalUnrealizedPnl = positions.reduce((sum, position) => sum + position.unrealizedPnl, 0)
+
+  return {
+    success: true,
+    data: {
+      exchange_account_id: exchangeAccountId,
+      total_unrealized_pnl: totalUnrealizedPnl,
+      positions,
+      fetched_at: new Date().toISOString(),
+    },
+  }
+}
+
+function decryptCredentials(apiKeyRow: {
+  key_encrypted: string
+  key_iv: string
+  secret_encrypted: string
+  secret_iv: string
+  passphrase_encrypted: string | null
+  passphrase_iv: string | null
+}): ExchangeCredentials | null {
+  try {
+    const apiKey = decrypt(apiKeyRow.key_encrypted, apiKeyRow.key_iv)
+    const apiSecret = decrypt(apiKeyRow.secret_encrypted, apiKeyRow.secret_iv)
+    const passphrase =
+      apiKeyRow.passphrase_encrypted && apiKeyRow.passphrase_iv
+        ? decrypt(apiKeyRow.passphrase_encrypted, apiKeyRow.passphrase_iv)
+        : undefined
+
+    return {
+      apiKey,
+      apiSecret,
+      passphrase,
+    }
+  } catch {
+    return null
+  }
 }

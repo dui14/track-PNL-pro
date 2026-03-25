@@ -1,5 +1,34 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { ExchangeAccount, ApiKeyRow } from '@/lib/types'
+import type { ExchangeAccount, ApiKeyRow, ExchangeAccountWithStats } from '@/lib/types'
+
+function hasMissingColumnError(error: unknown, column: string): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error ? String(error.message ?? '') : ''
+  return message.includes(column) && message.toLowerCase().includes('column')
+}
+
+function normalizeExchangeAccount(row: Record<string, unknown>, userId: string): ExchangeAccount {
+  const syncStatus: ExchangeAccount['sync_status'] =
+    row.sync_status === 'pending' ||
+    row.sync_status === 'syncing' ||
+    row.sync_status === 'synced' ||
+    row.sync_status === 'error'
+      ? row.sync_status
+      : 'pending'
+  const syncError = typeof row.sync_error === 'string' ? row.sync_error : null
+
+  return {
+    id: String(row.id),
+    user_id: typeof row.user_id === 'string' ? row.user_id : userId,
+    exchange: row.exchange as ExchangeAccount['exchange'],
+    label: typeof row.label === 'string' ? row.label : null,
+    is_active: Boolean(row.is_active),
+    sync_status: syncStatus,
+    sync_error: syncError,
+    last_synced: typeof row.last_synced === 'string' ? row.last_synced : null,
+    created_at: typeof row.created_at === 'string' ? row.created_at : new Date().toISOString(),
+  }
+}
 
 export async function createExchangeAccount(
   supabase: SupabaseClient,
@@ -7,14 +36,28 @@ export async function createExchangeAccount(
   exchange: string,
   label: string | null
 ): Promise<ExchangeAccount | null> {
-  const { data, error } = await supabase
+  const primary = await supabase
+    .from('exchange_accounts')
+    .insert({ user_id: userId, exchange, label, sync_status: 'pending' })
+    .select()
+    .single()
+
+  if (!primary.error && primary.data) {
+    return normalizeExchangeAccount(primary.data as unknown as Record<string, unknown>, userId)
+  }
+
+  if (!hasMissingColumnError(primary.error, 'sync_status')) {
+    return null
+  }
+
+  const fallback = await supabase
     .from('exchange_accounts')
     .insert({ user_id: userId, exchange, label })
     .select()
     .single()
 
-  if (error) return null
-  return data as ExchangeAccount
+  if (fallback.error || !fallback.data) return null
+  return normalizeExchangeAccount(fallback.data as unknown as Record<string, unknown>, userId)
 }
 
 export async function createApiKey(
@@ -23,9 +66,29 @@ export async function createApiKey(
   keyEncrypted: string,
   secretEncrypted: string,
   keyIv: string,
-  secretIv: string
+  secretIv: string,
+  passphraseEncrypted: string | null,
+  passphraseIv: string | null
 ): Promise<boolean> {
-  const { error } = await supabase.from('api_keys').insert({
+  const primary = await supabase.from('api_keys').insert({
+    exchange_account_id: exchangeAccountId,
+    key_encrypted: keyEncrypted,
+    secret_encrypted: secretEncrypted,
+    passphrase_encrypted: passphraseEncrypted,
+    key_iv: keyIv,
+    secret_iv: secretIv,
+    passphrase_iv: passphraseIv,
+  })
+
+  if (!primary.error) return true
+
+  const missingPassphraseColumn =
+    hasMissingColumnError(primary.error, 'passphrase_encrypted') ||
+    hasMissingColumnError(primary.error, 'passphrase_iv')
+
+  if (!missingPassphraseColumn) return false
+
+  const fallback = await supabase.from('api_keys').insert({
     exchange_account_id: exchangeAccountId,
     key_encrypted: keyEncrypted,
     secret_encrypted: secretEncrypted,
@@ -33,21 +96,49 @@ export async function createApiKey(
     secret_iv: secretIv,
   })
 
-  return !error
+  return !fallback.error
 }
 
 export async function getExchangeAccounts(
   supabase: SupabaseClient,
   userId: string
-): Promise<ExchangeAccount[]> {
-  const { data, error } = await supabase
+): Promise<ExchangeAccountWithStats[]> {
+  const primary = await supabase
     .from('exchange_accounts')
-    .select('id, exchange, label, is_active, last_synced, created_at')
+    .select('id, exchange, label, is_active, sync_status, sync_error, last_synced, created_at, trades(id), api_keys(passphrase_encrypted)')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
 
-  if (error) return []
-  return (data ?? []) as ExchangeAccount[]
+  if (!primary.error && primary.data) {
+    return primary.data.map((row) => {
+      const tradeRows = Array.isArray(row.trades) ? row.trades : []
+      const keyRows = Array.isArray(row.api_keys) ? row.api_keys : []
+
+      return {
+        ...normalizeExchangeAccount(row as unknown as Record<string, unknown>, userId),
+        trade_count: tradeRows.length,
+        has_passphrase: keyRows.some((keyRow) => Boolean(keyRow.passphrase_encrypted)),
+      }
+    }) as ExchangeAccountWithStats[]
+  }
+
+  const fallback = await supabase
+    .from('exchange_accounts')
+    .select('id, user_id, exchange, label, is_active, last_synced, created_at, trades(id)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+
+  if (fallback.error) return []
+
+  return (fallback.data ?? []).map((row) => {
+    const tradeRows = Array.isArray(row.trades) ? row.trades : []
+
+    return {
+      ...normalizeExchangeAccount(row as unknown as Record<string, unknown>, userId),
+      trade_count: tradeRows.length,
+      has_passphrase: false,
+    }
+  }) as ExchangeAccountWithStats[]
 }
 
 export async function getExchangeAccountById(
@@ -62,8 +153,8 @@ export async function getExchangeAccountById(
     .eq('user_id', userId)
     .single()
 
-  if (error) return null
-  return data as ExchangeAccount
+  if (error || !data) return null
+  return normalizeExchangeAccount(data as unknown as Record<string, unknown>, userId)
 }
 
 export async function getApiKey(
@@ -78,18 +169,70 @@ export async function getApiKey(
     .limit(1)
     .single()
 
-  if (error) return null
-  return data as ApiKeyRow
+  if (error || !data) return null
+
+  const normalized: ApiKeyRow = {
+    id: String(data.id),
+    exchange_account_id: String(data.exchange_account_id),
+    key_encrypted: String(data.key_encrypted),
+    secret_encrypted: String(data.secret_encrypted),
+    passphrase_encrypted:
+      typeof data.passphrase_encrypted === 'string' ? data.passphrase_encrypted : null,
+    key_iv: String(data.key_iv),
+    secret_iv: String(data.secret_iv),
+    passphrase_iv: typeof data.passphrase_iv === 'string' ? data.passphrase_iv : null,
+    key_version: typeof data.key_version === 'number' ? data.key_version : 1,
+    created_at: String(data.created_at),
+  }
+
+  return normalized
 }
 
 export async function updateLastSynced(
   supabase: SupabaseClient,
-  accountId: string
+  accountId: string,
+  syncStatus: 'synced' | 'error',
+  syncError: string | null
 ): Promise<void> {
-  await supabase
+  const primary = await supabase
     .from('exchange_accounts')
-    .update({ last_synced: new Date().toISOString() })
+    .update({
+      last_synced: new Date().toISOString(),
+      sync_status: syncStatus,
+      sync_error: syncError,
+    })
     .eq('id', accountId)
+
+  if (
+    primary.error &&
+    (hasMissingColumnError(primary.error, 'sync_status') ||
+      hasMissingColumnError(primary.error, 'sync_error'))
+  ) {
+    await supabase
+      .from('exchange_accounts')
+      .update({ last_synced: new Date().toISOString() })
+      .eq('id', accountId)
+  }
+}
+
+export async function updateSyncStatus(
+  supabase: SupabaseClient,
+  accountId: string,
+  syncStatus: 'pending' | 'syncing' | 'synced' | 'error',
+  syncError: string | null
+): Promise<void> {
+  const result = await supabase
+    .from('exchange_accounts')
+    .update({ sync_status: syncStatus, sync_error: syncError })
+    .eq('id', accountId)
+
+  if (
+    result.error &&
+    (hasMissingColumnError(result.error, 'sync_status') ||
+      hasMissingColumnError(result.error, 'sync_error'))
+  ) {
+    return
+  }
 }
 
 export async function deleteExchangeAccount(
@@ -127,9 +270,31 @@ export async function updateApiKeyRecord(
   keyEncrypted: string,
   secretEncrypted: string,
   keyIv: string,
-  secretIv: string
+  secretIv: string,
+  passphraseEncrypted: string | null,
+  passphraseIv: string | null
 ): Promise<boolean> {
-  const { error } = await supabase
+  const primary = await supabase
+    .from('api_keys')
+    .update({
+      key_encrypted: keyEncrypted,
+      secret_encrypted: secretEncrypted,
+      passphrase_encrypted: passphraseEncrypted,
+      key_iv: keyIv,
+      secret_iv: secretIv,
+      passphrase_iv: passphraseIv,
+    })
+    .eq('exchange_account_id', exchangeAccountId)
+
+  if (!primary.error) return true
+
+  const missingPassphraseColumn =
+    hasMissingColumnError(primary.error, 'passphrase_encrypted') ||
+    hasMissingColumnError(primary.error, 'passphrase_iv')
+
+  if (!missingPassphraseColumn) return false
+
+  const fallback = await supabase
     .from('api_keys')
     .update({
       key_encrypted: keyEncrypted,
@@ -139,7 +304,7 @@ export async function updateApiKeyRecord(
     })
     .eq('exchange_account_id', exchangeAccountId)
 
-  return !error
+  return !fallback.error
 }
 
 export async function exchangeAccountExists(
