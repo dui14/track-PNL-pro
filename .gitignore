@@ -20,6 +20,7 @@ src/.swc/
 src/.env
 src/.env.local
 src/.env.*.local
+keydata.env
 
 # MCP Config
 mcp/mcp-config.json
@@ -33,7 +34,7 @@ src/tsconfig.tsbuildinfo
 supabase/.branches/
 supabase/.temp/
 
-# Vercel
+.vscode
 .vercel
 
 # pnpm
@@ -83,4 +84,3 @@ test-results/
 *.pem
 *.key
 *.cert
-*.yaml
