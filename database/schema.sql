@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS exchange_accounts (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  exchange     TEXT NOT NULL CHECK (exchange IN ('binance','okx','bybit','bitget','mexc')),
+  exchange     TEXT NOT NULL CHECK (exchange IN ('binance','okx','bybit','bitget','gateio')),
   label        TEXT,
   is_active    BOOLEAN NOT NULL DEFAULT TRUE,
   sync_status  TEXT NOT NULL DEFAULT 'pending' CHECK (sync_status IN ('pending','syncing','synced','error')),
@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS trades (
   fee                 NUMERIC(28,10) NOT NULL DEFAULT 0,
   fee_currency        TEXT,
   realized_pnl        NUMERIC(28,10),
+  funding_fee         NUMERIC(28,10) NOT NULL DEFAULT 0,
+  income_type         TEXT,
   trade_type          TEXT NOT NULL CHECK (trade_type IN ('spot','futures','margin')),
   traded_at           TIMESTAMPTZ NOT NULL,
   raw_data            JSONB,

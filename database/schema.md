@@ -35,7 +35,7 @@ CREATE POLICY "users_own_profile" ON users
 CREATE TABLE exchange_accounts (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  exchange     TEXT NOT NULL CHECK (exchange IN ('binance','okx','bybit','bitget','mexc')),
+  exchange     TEXT NOT NULL CHECK (exchange IN ('binance','okx','bybit','bitget','gateio')),
   label        TEXT,
   is_active    BOOLEAN NOT NULL DEFAULT TRUE,
   last_synced  TIMESTAMPTZ,
