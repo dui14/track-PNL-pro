@@ -76,34 +76,91 @@ export function AIChatInterface(): React.JSX.Element {
         body: JSON.stringify({ message: trimmed, conversationId: activeConvId }),
       })
 
-      if (!res.body) return
+      if (!res.ok) {
+        let apiError = 'CHAT_REQUEST_FAILED'
+        try {
+          const payload = (await res.json()) as { error?: string }
+          if (typeof payload.error === 'string' && payload.error.length > 0) {
+            apiError = payload.error
+          }
+        } catch {}
+        throw new Error(apiError)
+      }
+
+      if (!res.body) {
+        throw new Error('EMPTY_STREAM')
+      }
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let fullContent = ''
       let newConvId: string | null = null
+      let streamError: string | null = null
+      let doneReceived = false
+      let buffer = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        const text = decoder.decode(value)
-        const lines = text.split('\n')
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const rawLine of lines) {
+          const line = rawLine.trim()
+          if (!line.startsWith('data:')) continue
+
+          const payloadText = line.slice(5).trim()
+          if (!payloadText) continue
+          if (payloadText === '[DONE]') {
+            doneReceived = true
+            continue
+          }
+
           try {
-            const chunk = JSON.parse(line.slice(6))
-            if (chunk.type === 'delta' && chunk.content) {
-              fullContent += chunk.content
+            const chunk = JSON.parse(payloadText) as {
+              type?: string
+              content?: string
+              conversationId?: string
+              error?: string
+            }
+
+            if (typeof chunk.conversationId === 'string' && chunk.conversationId.length > 0) {
+              newConvId = chunk.conversationId
+            }
+
+            if (typeof chunk.error === 'string' && chunk.error.length > 0) {
+              streamError = chunk.error
+            }
+
+            const contentPart = typeof chunk.content === 'string' ? chunk.content : ''
+            if (contentPart) {
+              fullContent += contentPart
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === tempAssistantMsg.id ? { ...m, content: fullContent } : m
                 )
               )
-            } else if (chunk.type === 'done' && chunk.conversationId) {
+            }
+
+            if (chunk.type === 'done' && typeof chunk.conversationId === 'string') {
               newConvId = chunk.conversationId
             }
           } catch {}
         }
+      }
+
+      if (!doneReceived && !streamError && fullContent.length === 0) {
+        streamError = 'STREAM_TERMINATED'
+      }
+
+      if (streamError && fullContent.length === 0) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempAssistantMsg.id ? { ...m, content: `Error: ${streamError}` } : m
+          )
+        )
       }
 
       if (newConvId) {
@@ -114,6 +171,13 @@ export function AIChatInterface(): React.JSX.Element {
         }
         window.dispatchEvent(new CustomEvent('ai-conv-change'))
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'INTERNAL_ERROR'
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempAssistantMsg.id ? { ...m, content: `Error: ${message}` } : m
+        )
+      )
     } finally {
       setIsSending(false)
     }

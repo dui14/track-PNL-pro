@@ -38,9 +38,9 @@ export async function createExchangeAdapter(exchange: string): Promise<ExchangeA
       const { BitgetAdapter } = await import('./bitgetAdapter')
       return new BitgetAdapter()
     }
-    case 'mexc': {
-      const { MEXCAdapter } = await import('./mexcAdapter')
-      return new MEXCAdapter()
+    case 'gateio': {
+      const { GateioAdapter } = await import('./gateioAdapter')
+      return new GateioAdapter()
     }
     default:
       throw new Error(`Unsupported exchange: ${exchange}`)

@@ -17,7 +17,7 @@ const EXCHANGE_OPTIONS: {
   { id: 'okx', name: 'OKX', bgClass: 'bg-slate-900 dark:bg-slate-700', textClass: 'text-white', abbr: 'OKX' },
   { id: 'bybit', name: 'Bybit', bgClass: 'bg-orange-500', textClass: 'text-white', abbr: 'BB' },
   { id: 'bitget', name: 'Bitget', bgClass: 'bg-cyan-500', textClass: 'text-white', abbr: 'BG' },
-  { id: 'mexc', name: 'MEXC', bgClass: 'bg-blue-600', textClass: 'text-white', abbr: 'M' },
+  { id: 'gateio', name: 'Gate.io', bgClass: 'bg-emerald-600', textClass: 'text-white', abbr: 'G' },
 ]
 
 function ExchangeLogo({ exchange }: { exchange: string }) {

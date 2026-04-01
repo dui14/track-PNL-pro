@@ -13,7 +13,7 @@ export type Result<T, E = string> =
   | { success: true; data: T }
   | { success: false; error: E }
 
-export const EXCHANGES = ['binance', 'okx', 'bybit', 'bitget', 'mexc'] as const
+export const EXCHANGES = ['binance', 'okx', 'bybit', 'bitget', 'gateio'] as const
 export type Exchange = (typeof EXCHANGES)[number]
 
 export const PERIOD_TYPES = ['day', 'week', 'month', 'year', 'all'] as const
@@ -189,7 +189,23 @@ export type DashboardOverview = {
   totalTrades: {
     count: number
     volumeUsd: number
+    volumeUsdD7: number
+    volumeUsdD30: number
+    volumeUsdD90: number
   }
+}
+
+export type AssetDistributionItem = {
+  exchange: Exchange
+  asset: string
+  quantity: number
+  usdValue: number
+  ratio: number
+}
+
+export type AssetDistributionSummary = {
+  totalUsd: number
+  items: AssetDistributionItem[]
 }
 
 export type ExchangeAdapterTrade = {

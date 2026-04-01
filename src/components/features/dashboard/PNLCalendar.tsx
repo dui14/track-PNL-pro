@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import type { PNLCalendarDay, PNLCalendarMonth, TradeSegment } from '@/lib/types'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import type { Exchange, PNLCalendarDay, PNLCalendarMonth, TradeSegment } from '@/lib/types'
 
 type CalendarView = 'daily' | 'monthly'
 
@@ -9,6 +9,7 @@ const MONTH_NAMES_VI = [
   'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
   'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12',
 ]
+const MIN_CALENDAR_YEAR = 2020
 
 const DAY_HEADERS = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật']
 
@@ -52,9 +53,10 @@ function pnlColor(pnl: number, hasData: boolean): string {
 
 type PNLCalendarProps = {
   segment: TradeSegment
+  exchange: 'all' | Exchange
 }
 
-export function PNLCalendar({ segment }: PNLCalendarProps): React.JSX.Element {
+export function PNLCalendar({ segment, exchange }: PNLCalendarProps): React.JSX.Element {
   const now = new Date()
   const [view, setView] = useState<CalendarView>('daily')
   const [year, setYear] = useState(now.getFullYear())
@@ -62,11 +64,22 @@ export function PNLCalendar({ segment }: PNLCalendarProps): React.JSX.Element {
   const [days, setDays] = useState<PNLCalendarDay[]>([])
   const [months, setMonths] = useState<PNLCalendarMonth[]>([])
   const [loading, setLoading] = useState(false)
+  const yearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear()
+    const options: number[] = []
+
+    for (let y = currentYear; y >= MIN_CALENDAR_YEAR; y -= 1) {
+      options.push(y)
+    }
+
+    return options
+  }, [])
 
   const fetchCalendarData = useCallback(async (): Promise<void> => {
     setLoading(true)
     const params = new URLSearchParams({ view, year: String(year), segment })
     if (view === 'daily') params.set('month', String(month))
+    if (exchange !== 'all') params.set('exchange', exchange)
 
     try {
       const res = await fetch(`/api/pnl/calendar?${params}`)
@@ -82,7 +95,7 @@ export function PNLCalendar({ segment }: PNLCalendarProps): React.JSX.Element {
     } finally {
       setLoading(false)
     }
-  }, [view, year, month, segment])
+  }, [view, year, month, segment, exchange])
 
   useEffect(() => {
     fetchCalendarData()
@@ -152,6 +165,53 @@ export function PNLCalendar({ segment }: PNLCalendarProps): React.JSX.Element {
     if (v === 'daily' && month === 0) setMonth(now.getMonth() + 1)
   }
 
+  const handleMonthSelectChange = (event: React.ChangeEvent<HTMLSelectElement>): void => {
+    const selectedMonth = Number(event.target.value)
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth() + 1
+
+    if (year === currentYear && selectedMonth > currentMonth) {
+      setMonth(currentMonth)
+      return
+    }
+
+    setMonth(selectedMonth)
+  }
+
+  const handleYearSelectChange = (event: React.ChangeEvent<HTMLSelectElement>): void => {
+    const selectedYear = Number(event.target.value)
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth() + 1
+
+    if (view === 'monthly') {
+      setYear(Math.min(selectedYear, currentYear))
+      return
+    }
+
+    if (selectedYear > currentYear) {
+      setYear(currentYear)
+      setMonth(currentMonth)
+      return
+    }
+
+    setYear(selectedYear)
+
+    if (selectedYear === currentYear && month > currentMonth) {
+      setMonth(currentMonth)
+    }
+  }
+
+  const handlePeriodWheel = (event: React.WheelEvent<HTMLDivElement>): void => {
+    event.preventDefault()
+
+    if (event.deltaY > 0) {
+      goForward()
+      return
+    }
+
+    goBack()
+  }
+
   const calendarRows = view === 'daily' ? buildRows() : []
 
   return (
@@ -180,7 +240,7 @@ export function PNLCalendar({ segment }: PNLCalendarProps): React.JSX.Element {
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3" onWheel={handlePeriodWheel}>
           <button
             onClick={goBack}
             className="p-1.5 rounded hover:bg-primary/10 text-slate-400 hover:text-primary transition-colors"
@@ -199,6 +259,37 @@ export function PNLCalendar({ segment }: PNLCalendarProps): React.JSX.Element {
           >
             <IconRight />
           </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {view === 'daily' && (
+            <select
+              value={month}
+              onChange={handleMonthSelectChange}
+              className="h-8 rounded-lg border border-slate-200 dark:border-primary/20 bg-white dark:bg-background-dark px-2 text-xs font-semibold text-slate-700 dark:text-slate-200"
+            >
+              {MONTH_NAMES_VI.map((label, index) => {
+                const optionMonth = index + 1
+                return (
+                  <option key={label} value={optionMonth}>
+                    {label}
+                  </option>
+                )
+              })}
+            </select>
+          )}
+
+          <select
+            value={year}
+            onChange={handleYearSelectChange}
+            className="h-8 rounded-lg border border-slate-200 dark:border-primary/20 bg-white dark:bg-background-dark px-2 text-xs font-semibold text-slate-700 dark:text-slate-200"
+          >
+            {yearOptions.map((optionYear) => (
+              <option key={optionYear} value={optionYear}>
+                {optionYear}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

@@ -28,7 +28,7 @@ const EXCHANGE_LABELS: Record<string, string> = {
   okx: 'OKX',
   bybit: 'Bybit',
   bitget: 'Bitget',
-  mexc: 'MEXC',
+  gateio: 'Gate.io',
 }
 
 function formatMemberSince(dateStr: string): string {

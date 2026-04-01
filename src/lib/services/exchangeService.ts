@@ -21,11 +21,15 @@ import {
   updateApiKeyRecord,
   updateSyncStatus,
 } from '@/lib/db/exchangeDb'
-import { upsertTrades } from '@/lib/db/tradesDb'
+import { deleteExchangeTrackingData, upsertTrades } from '@/lib/db/tradesDb'
 import { encrypt, decrypt } from '@/lib/adapters/encryption'
 import { createExchangeAdapter } from '@/lib/adapters/exchangeFactory'
 
-const MAX_SYNC_LOOKBACK_MS = 360 * 24 * 60 * 60 * 1000
+function getSyncLookbackDate(): Date {
+  const lookback = new Date()
+  lookback.setUTCFullYear(lookback.getUTCFullYear() - 1)
+  return lookback
+}
 
 export async function connectExchange(
   supabase: SupabaseClient,
@@ -123,6 +127,7 @@ export async function syncExchangeAccount(
   const serviceSupabase = (await import('@/lib/db/supabase-server')).createSupabaseServiceClient()
   const apiKeyRow = await getApiKey(serviceSupabase, exchangeAccountId)
   if (!apiKeyRow) {
+    await updateSyncStatus(supabase, exchangeAccountId, 'error', 'API_KEY_NOT_FOUND')
     return { success: false, error: 'API_KEY_NOT_FOUND' }
   }
 
@@ -133,10 +138,7 @@ export async function syncExchangeAccount(
   }
 
   const adapter = await createExchangeAdapter(account.exchange)
-  const maxLookbackDate = new Date(Date.now() - MAX_SYNC_LOOKBACK_MS)
-  const since = account.last_synced
-    ? new Date(Math.max(new Date(account.last_synced).getTime(), maxLookbackDate.getTime()))
-    : maxLookbackDate
+  const since = getSyncLookbackDate()
 
   let trades
   try {
@@ -147,7 +149,15 @@ export async function syncExchangeAccount(
     return { success: false, error: 'EXCHANGE_ERROR' }
   }
 
-  const newTrades = await upsertTrades(serviceSupabase, exchangeAccountId, userId, trades)
+  let newTrades = 0
+  try {
+    newTrades = await upsertTrades(serviceSupabase, exchangeAccountId, userId, trades)
+  } catch (err) {
+    console.error('[exchangeService] upsertTrades failed:', err)
+    await updateSyncStatus(supabase, exchangeAccountId, 'error', 'INTERNAL_ERROR')
+    return { success: false, error: 'INTERNAL_ERROR' }
+  }
+
   const lastSynced = new Date().toISOString()
 
   await updateLastSynced(supabase, exchangeAccountId, 'synced', null)
@@ -172,6 +182,11 @@ export async function removeExchangeAccount(
     return { success: false, error: 'NOT_FOUND' }
   }
 
+  const trackingDeleted = await deleteExchangeTrackingData(supabase, userId, accountId)
+  if (!trackingDeleted) {
+    return { success: false, error: 'INTERNAL_ERROR' }
+  }
+
   const deleted = await deleteExchangeAccount(supabase, accountId, userId)
   if (!deleted) {
     return { success: false, error: 'INTERNAL_ERROR' }
@@ -194,6 +209,28 @@ export async function toggleExchangeActive(
   const updated = await updateExchangeActive(supabase, accountId, userId, isActive)
   if (!updated) {
     return { success: false, error: 'INTERNAL_ERROR' }
+  }
+
+  if (!isActive) {
+    const deleted = await deleteExchangeTrackingData(supabase, userId, accountId)
+    if (!deleted) {
+      await updateExchangeActive(supabase, accountId, userId, true)
+      return { success: false, error: 'INTERNAL_ERROR' }
+    }
+
+    const syncReset = await supabase
+      .from('exchange_accounts')
+      .update({ last_synced: null, sync_status: 'pending', sync_error: null })
+      .eq('id', accountId)
+      .eq('user_id', userId)
+
+    if (syncReset.error) {
+      await supabase
+        .from('exchange_accounts')
+        .update({ last_synced: null })
+        .eq('id', accountId)
+        .eq('user_id', userId)
+    }
   }
 
   return { success: true, data: { ...account, is_active: isActive } }

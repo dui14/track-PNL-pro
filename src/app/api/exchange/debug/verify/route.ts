@@ -1,4 +1,4 @@
-import { createHmac } from 'crypto'
+import { createHash, createHmac } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { ProxyAgent } from 'undici'
 import { signOkxRequest } from '@/lib/adapters/okxApi'
@@ -61,6 +61,19 @@ function signBitget(
 ): string {
   const payload = `${timestamp}${method.toUpperCase()}${requestPath}${body}`
   return createHmac('sha256', secret).update(payload).digest('base64')
+}
+
+function signGateio(
+  secret: string,
+  method: string,
+  requestPath: string,
+  queryString: string,
+  body: string,
+  timestamp: string
+): string {
+  const bodyHash = createHash('sha512').update(body).digest('hex')
+  const payload = `${method.toUpperCase()}\n/api/v4${requestPath}\n${queryString}\n${bodyHash}\n${timestamp}`
+  return createHmac('sha512', secret).update(payload).digest('hex')
 }
 
 function normalizeBaseUrl(input: string | undefined, fallback: string): string {
@@ -297,6 +310,55 @@ async function verifyBitget(input: ExchangeDebugVerifyInput): Promise<DebugVerif
   }
 }
 
+async function verifyGateio(input: ExchangeDebugVerifyInput): Promise<DebugVerifyResult> {
+  const baseUrl = normalizeBaseUrl(input.baseUrl, 'https://api.gateio.ws')
+  const apiPath = '/api/v4/spot/accounts'
+  const signPath = '/spot/accounts'
+  const queryString = 'currency=USDT'
+  const requestPath = `${apiPath}?${queryString}`
+  const timestamp = Math.floor(Date.now() / 1000).toString()
+  const signature = signGateio(input.apiSecret, 'GET', signPath, queryString, '', timestamp)
+
+  const { ok, status, body } = await fetchJson(
+    `${baseUrl}${requestPath}`,
+    {
+      method: 'GET',
+      headers: {
+        KEY: input.apiKey,
+        Timestamp: timestamp,
+        SIGN: signature,
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+    },
+    input
+  )
+
+  const record = asRecord(body)
+  const exchangeCode =
+    typeof record?.label === 'string'
+      ? record.label
+      : typeof record?.code === 'string' || typeof record?.code === 'number'
+        ? (record.code as string | number)
+        : null
+  const exchangeMessage =
+    typeof record?.message === 'string'
+      ? record.message
+      : typeof record?.detail === 'string'
+        ? record.detail
+        : null
+  const payloadOk = Array.isArray(body)
+
+  return {
+    ok: ok && payloadOk,
+    upstreamStatus: status,
+    exchangeCode,
+    exchangeMessage,
+    requestPath,
+    payload: body,
+  }
+}
+
 function buildHints(exchange: string, result: DebugVerifyResult): string[] {
   const hints: string[] = []
   if (result.upstreamStatus === 401 || result.upstreamStatus === 403) {
@@ -325,6 +387,14 @@ function buildHints(exchange: string, result: DebugVerifyResult): string[] {
 
   if (exchange === 'bitget' && result.exchangeCode === '30032') {
     hints.push('Bitget V1 endpoint da ngung hoat dong. Chuyen sang API v2.')
+  }
+
+  if (exchange === 'gateio' && result.exchangeCode === 'INVALID_KEY') {
+    hints.push('Gate.io API key khong hop le hoac bi revoke.')
+  }
+
+  if (exchange === 'gateio' && result.exchangeCode === 'INVALID_SIGNATURE') {
+    hints.push('Gate.io signature sai. Kiem tra secret va prehash string.')
   }
 
   if (result.upstreamStatus >= 500) {
@@ -374,7 +444,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           ? await verifyOkx(input)
           : input.exchange === 'bybit'
             ? await verifyBybit(input)
-            : await verifyBitget(input)
+            : input.exchange === 'bitget'
+              ? await verifyBitget(input)
+              : await verifyGateio(input)
 
     const hints = buildHints(input.exchange, result)
 

@@ -9,7 +9,9 @@ import type { ExchangeAdapter } from './exchangeFactory'
 
 const BASE_URL = 'https://www.okx.com'
 const REQUEST_TIMEOUT = 10_000
-const DEFAULT_LOOKBACK_MS = 360 * 24 * 60 * 60 * 1000
+const DEFAULT_LOOKBACK_MS = 365 * 24 * 60 * 60 * 1000
+const OKX_HISTORY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+const OKX_PAGE_LIMIT = 100
 
 async function fetchWithTimeout(url: string, options?: RequestInit): Promise<Response> {
   const controller = new AbortController()
@@ -82,26 +84,197 @@ export class OKXAdapter implements ExchangeAdapter {
   }
 
   async fetchTrades(credentials: ExchangeCredentials, since?: Date): Promise<ExchangeAdapterTrade[]> {
-    const begin = since ? since.getTime() : Date.now() - DEFAULT_LOOKBACK_MS
-    const end = Date.now()
-    const query = new URLSearchParams({
-      type: '2',
-      begin: String(begin),
-      end: String(end),
-      limit: '100',
-    })
-    const path = `/api/v5/account/bills-archive?${query.toString()}`
-    const headers = this.buildHeaders(credentials, 'GET', path)
-    const response = await fetchWithRetry(`${BASE_URL}${path}`, { headers })
+    const startDate = since ?? new Date(Date.now() - DEFAULT_LOOKBACK_MS)
 
-    if (!response.ok) return []
+    const [fillTrades, fundingTrades] = await Promise.all([
+      this.fetchTradeFills(credentials, startDate),
+      this.fetchFundingBills(credentials, startDate),
+    ])
 
-    const data = (await response.json()) as { code: string; data: OKXBill[] }
-    if (data.code !== '0') return []
+    const merged = this.deduplicateTrades([...fillTrades, ...fundingTrades])
+    if (merged.length > 0) {
+      return merged
+    }
 
-    return data.data
-      .filter((item) => ['2', '8', '14'].includes(item.type))
-      .map((item) => this.normalizeBill(item))
+    return this.fetchBillsArchiveFallback(credentials, startDate)
+  }
+
+  private async fetchTradeFills(
+    credentials: ExchangeCredentials,
+    since: Date
+  ): Promise<ExchangeAdapterTrade[]> {
+    const startTime = since.getTime()
+    const now = Date.now()
+    const instTypes: Array<'SPOT' | 'SWAP' | 'FUTURES'> = ['SPOT', 'SWAP', 'FUTURES']
+    const rows: ExchangeAdapterTrade[] = []
+
+    for (const instType of instTypes) {
+      let windowStart = startTime
+
+      while (windowStart <= now) {
+        let cursorEnd = Math.min(windowStart + OKX_HISTORY_WINDOW_MS - 1, now)
+
+        for (let page = 0; page < 50; page += 1) {
+          const query = new URLSearchParams({
+            instType,
+            begin: String(windowStart),
+            end: String(cursorEnd),
+            limit: String(OKX_PAGE_LIMIT),
+          })
+
+          const path = `/api/v5/trade/fills-history?${query.toString()}`
+          const headers = this.buildHeaders(credentials, 'GET', path)
+          const response = await fetchWithRetry(`${BASE_URL}${path}`, { headers })
+
+          if (!response.ok) break
+
+          const payload = (await response.json()) as { code: string; data?: OKXFill[] }
+          if (payload.code !== '0') break
+
+          const list = Array.isArray(payload.data) ? payload.data : []
+          if (list.length === 0) break
+
+          let oldestTs = cursorEnd
+          for (const item of list) {
+            const normalized = this.normalizeFill(item)
+            rows.push(normalized)
+
+            const itemTs = Number.parseInt(String(item.ts ?? ''), 10)
+            if (Number.isFinite(itemTs)) {
+              oldestTs = Math.min(oldestTs, itemTs)
+            }
+          }
+
+          if (list.length < OKX_PAGE_LIMIT || oldestTs <= windowStart) {
+            break
+          }
+
+          cursorEnd = oldestTs - 1
+          await sleep(80)
+        }
+
+        windowStart = Math.min(windowStart + OKX_HISTORY_WINDOW_MS, now + 1)
+        await sleep(80)
+      }
+
+      await sleep(80)
+    }
+
+    return this.deduplicateTrades(rows)
+  }
+
+  private async fetchFundingBills(
+    credentials: ExchangeCredentials,
+    since: Date
+  ): Promise<ExchangeAdapterTrade[]> {
+    const startTime = since.getTime()
+    const now = Date.now()
+    const rows: ExchangeAdapterTrade[] = []
+    let windowStart = startTime
+
+    while (windowStart <= now) {
+      let cursorEnd = Math.min(windowStart + OKX_HISTORY_WINDOW_MS - 1, now)
+
+      for (let page = 0; page < 50; page += 1) {
+        const query = new URLSearchParams({
+          type: '8',
+          begin: String(windowStart),
+          end: String(cursorEnd),
+          limit: String(OKX_PAGE_LIMIT),
+        })
+
+        const path = `/api/v5/account/bills-archive?${query.toString()}`
+        const headers = this.buildHeaders(credentials, 'GET', path)
+        const response = await fetchWithRetry(`${BASE_URL}${path}`, { headers })
+
+        if (!response.ok) break
+
+        const payload = (await response.json()) as { code: string; data?: OKXBill[] }
+        if (payload.code !== '0') break
+
+        const list = Array.isArray(payload.data) ? payload.data : []
+        if (list.length === 0) break
+
+        let oldestTs = cursorEnd
+        for (const item of list) {
+          rows.push(this.normalizeFundingBill(item))
+
+          const itemTs = Number.parseInt(String(item.ts ?? ''), 10)
+          if (Number.isFinite(itemTs)) {
+            oldestTs = Math.min(oldestTs, itemTs)
+          }
+        }
+
+        if (list.length < OKX_PAGE_LIMIT || oldestTs <= windowStart) {
+          break
+        }
+
+        cursorEnd = oldestTs - 1
+        await sleep(80)
+      }
+
+      windowStart = Math.min(windowStart + OKX_HISTORY_WINDOW_MS, now + 1)
+      await sleep(80)
+    }
+
+    return this.deduplicateTrades(rows)
+  }
+
+  private async fetchBillsArchiveFallback(
+    credentials: ExchangeCredentials,
+    since: Date
+  ): Promise<ExchangeAdapterTrade[]> {
+    const startTime = since.getTime()
+    const now = Date.now()
+    const rows: ExchangeAdapterTrade[] = []
+    let windowStart = startTime
+
+    while (windowStart <= now) {
+      let cursorEnd = Math.min(windowStart + OKX_HISTORY_WINDOW_MS - 1, now)
+
+      for (let page = 0; page < 50; page += 1) {
+        const query = new URLSearchParams({
+          begin: String(windowStart),
+          end: String(cursorEnd),
+          limit: String(OKX_PAGE_LIMIT),
+        })
+
+        const path = `/api/v5/account/bills-archive?${query.toString()}`
+        const headers = this.buildHeaders(credentials, 'GET', path)
+        const response = await fetchWithRetry(`${BASE_URL}${path}`, { headers })
+
+        if (!response.ok) break
+
+        const payload = (await response.json()) as { code: string; data?: OKXBill[] }
+        if (payload.code !== '0') break
+
+        const list = Array.isArray(payload.data) ? payload.data : []
+        if (list.length === 0) break
+
+        let oldestTs = cursorEnd
+        for (const item of list) {
+          if (!['2', '8', '14'].includes(String(item.type ?? ''))) continue
+          rows.push(this.normalizeBill(item))
+
+          const itemTs = Number.parseInt(String(item.ts ?? ''), 10)
+          if (Number.isFinite(itemTs)) {
+            oldestTs = Math.min(oldestTs, itemTs)
+          }
+        }
+
+        if (list.length < OKX_PAGE_LIMIT || oldestTs <= windowStart) {
+          break
+        }
+
+        cursorEnd = oldestTs - 1
+        await sleep(80)
+      }
+
+      windowStart = Math.min(windowStart + OKX_HISTORY_WINDOW_MS, now + 1)
+      await sleep(80)
+    }
+
+    return this.deduplicateTrades(rows)
   }
 
   async fetchOpenPositions(credentials: ExchangeCredentials): Promise<UnrealizedPosition[]> {
@@ -184,6 +357,84 @@ export class OKXAdapter implements ExchangeAdapter {
     }
   }
 
+  private normalizeFill(fill: OKXFill): ExchangeAdapterTrade {
+    const symbol = (fill.instId ?? '').replace(/-/g, '')
+    const side: 'buy' | 'sell' = (fill.side ?? '').toLowerCase() === 'sell' ? 'sell' : 'buy'
+
+    const rawQuantity = parseFloat(fill.fillSz ?? '0')
+    const rawPrice = parseFloat(fill.fillPx ?? '0')
+    const rawFee = parseFloat(fill.fillFee ?? '0')
+    const rawPnl = parseFloat(fill.fillPnl ?? '')
+    const parsedTs = Number.parseInt(String(fill.ts ?? ''), 10)
+
+    const quantity = Number.isFinite(rawQuantity) ? Math.abs(rawQuantity) : 0
+    const price = Number.isFinite(rawPrice) ? rawPrice : 0
+    const fee = Number.isFinite(rawFee) ? Math.abs(rawFee) : 0
+    const realizedPnl = Number.isFinite(rawPnl) ? rawPnl : null
+    const tradedAt = Number.isFinite(parsedTs)
+      ? new Date(parsedTs).toISOString()
+      : new Date().toISOString()
+
+    const instType = String(fill.instType ?? '').toUpperCase()
+    const tradeType = instType === 'SPOT' ? 'spot' : 'futures'
+    const tradeId = String(fill.tradeId ?? fill.ordId ?? `${symbol}:${tradedAt}`).trim()
+
+    return {
+      external_trade_id: `okx_fill_${tradeId}`,
+      symbol,
+      side,
+      quantity,
+      price,
+      fee,
+      fee_currency: fill.fillFeeCcy ?? 'USDT',
+      realized_pnl: realizedPnl,
+      funding_fee: 0,
+      income_type: fill.execType ?? null,
+      trade_type: tradeType,
+      traded_at: tradedAt,
+      raw_data: fill as unknown as Record<string, unknown>,
+    }
+  }
+
+  private normalizeFundingBill(bill: OKXBill): ExchangeAdapterTrade {
+    const pnl = parseFloat(bill.pnl ?? '0')
+    const fee = parseFloat(bill.fee ?? '0')
+    const amount =
+      (Number.isFinite(pnl) ? pnl : 0) +
+      (Number.isFinite(fee) ? fee : 0)
+    const side: 'buy' | 'sell' = amount >= 0 ? 'sell' : 'buy'
+    const parsedTs = Number.parseInt(String(bill.ts ?? ''), 10)
+
+    return {
+      external_trade_id: `okx_funding_${bill.billId}`,
+      symbol: (bill.instId ?? '').replace(/-/g, ''),
+      side,
+      quantity: 0,
+      price: 0,
+      fee: 0,
+      fee_currency: bill.ccy ?? 'USDT',
+      realized_pnl: amount,
+      funding_fee: amount,
+      income_type: 'funding_fee',
+      trade_type: bill.instType === 'SPOT' ? 'spot' : 'futures',
+      traded_at: Number.isFinite(parsedTs)
+        ? new Date(parsedTs).toISOString()
+        : new Date().toISOString(),
+      raw_data: bill as unknown as Record<string, unknown>,
+    }
+  }
+
+  private deduplicateTrades(trades: ExchangeAdapterTrade[]): ExchangeAdapterTrade[] {
+    const dedup = new Set<string>()
+
+    return trades.filter((trade) => {
+      const key = `${trade.symbol}:${trade.external_trade_id}`
+      if (dedup.has(key)) return false
+      dedup.add(key)
+      return true
+    })
+  }
+
   private async getUsdPrice(asset: string): Promise<number> {
     if (asset === 'USDT' || asset === 'USDC' || asset === 'BUSD' || asset === 'USD') return 1
     try {
@@ -210,6 +461,21 @@ type OKXBill = {
   sz: string
   px: string
   ts: string
+}
+
+type OKXFill = {
+  tradeId?: string
+  ordId?: string
+  instType?: string
+  instId?: string
+  side?: string
+  fillSz?: string
+  fillPx?: string
+  fillFee?: string
+  fillFeeCcy?: string
+  fillPnl?: string
+  execType?: string
+  ts?: string
 }
 
 type OKXPosition = {

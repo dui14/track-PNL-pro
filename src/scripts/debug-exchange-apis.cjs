@@ -25,6 +25,14 @@ function hmacBase64(secret, payload) {
   return crypto.createHmac('sha256', secret).update(payload).digest('base64');
 }
 
+function hmacSha512Hex(secret, payload) {
+  return crypto.createHmac('sha512', secret).update(payload).digest('hex');
+}
+
+function sha512Hex(payload) {
+  return crypto.createHash('sha512').update(payload).digest('hex');
+}
+
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
   const text = await response.text();
@@ -288,6 +296,74 @@ async function testBitget(env) {
   };
 }
 
+async function testGateio(env) {
+  const apiKey = env.GATEIO_API_KEY;
+  const apiSecret = env.GATEIO_API_SECRET;
+  if (!apiKey || !apiSecret) {
+    return { exchange: 'gateio', ok: false, reason: 'MISSING_KEYS' };
+  }
+
+  const accountPath = '/api/v4/spot/accounts';
+  const accountSignPath = '/spot/accounts';
+  const accountQuery = 'currency=USDT';
+  const accountTimestamp = Math.floor(Date.now() / 1000).toString();
+  const accountPayload = `GET\n/api/v4${accountSignPath}\n${accountQuery}\n${sha512Hex('')}\n${accountTimestamp}`;
+  const accountSig = hmacSha512Hex(apiSecret, accountPayload);
+  const accountRes = await fetchJson(`https://api.gateio.ws${accountPath}?${accountQuery}`, {
+    method: 'GET',
+    headers: {
+      KEY: apiKey,
+      Timestamp: accountTimestamp,
+      SIGN: accountSig,
+      Accept: 'application/json',
+    },
+  });
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const fromSec = Math.floor(daysAgoMs(90) / 1000);
+  const pnlParams = new URLSearchParams({
+    from: String(fromSec),
+    to: String(nowSec),
+    limit: '100',
+    offset: '0',
+  });
+  const pnlQuery = pnlParams.toString();
+  const pnlPath = '/api/v4/futures/usdt/position_close';
+  const pnlSignPath = '/futures/usdt/position_close';
+  const pnlTimestamp = Math.floor(Date.now() / 1000).toString();
+  const pnlPayload = `GET\n/api/v4${pnlSignPath}\n${pnlQuery}\n${sha512Hex('')}\n${pnlTimestamp}`;
+  const pnlSig = hmacSha512Hex(apiSecret, pnlPayload);
+  const pnlRes = await fetchJson(`https://api.gateio.ws${pnlPath}?${pnlQuery}`, {
+    method: 'GET',
+    headers: {
+      KEY: apiKey,
+      Timestamp: pnlTimestamp,
+      SIGN: pnlSig,
+      Accept: 'application/json',
+    },
+  });
+
+  return {
+    exchange: 'gateio',
+    ok:
+      accountRes.ok &&
+      Array.isArray(accountRes.data) &&
+      pnlRes.ok &&
+      Array.isArray(pnlRes.data),
+    accountStatus: accountRes.status,
+    futuresStatus: pnlRes.status,
+    accountCode:
+      accountRes.data && !Array.isArray(accountRes.data)
+        ? accountRes.data.label ?? accountRes.data.code ?? null
+        : null,
+    futuresCode:
+      pnlRes.data && !Array.isArray(pnlRes.data)
+        ? pnlRes.data.label ?? pnlRes.data.code ?? null
+        : null,
+    futuresCount: Array.isArray(pnlRes.data) ? pnlRes.data.length : null,
+  };
+}
+
 async function main() {
   const envPath = path.resolve(__dirname, '..', '..', 'keydata.env');
   const env = loadEnvFile(envPath);
@@ -297,6 +373,7 @@ async function main() {
   results.push(await testOkx(env));
   results.push(await testBybit(env));
   results.push(await testBitget(env));
+  results.push(await testGateio(env));
 
   const summary = {
     testedAt: new Date().toISOString(),

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/db/supabase-server'
-import { PNLChartQuerySchema } from '@/lib/validators/pnl'
-import { fetchPNLChart } from '@/lib/services/pnlService'
+import { fetchAssetDistribution } from '@/lib/services/pnlService'
+import { AssetDistributionQuerySchema } from '@/lib/validators/pnl'
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const supabase = await createSupabaseServerClient()
@@ -17,9 +17,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   const { searchParams } = req.nextUrl
-  const parsed = PNLChartQuerySchema.safeParse({
-    range: searchParams.get('range') ?? undefined,
-    exchangeAccountId: searchParams.get('exchangeAccountId') ?? undefined,
+  const parsed = AssetDistributionQuerySchema.safeParse({
     exchange: searchParams.get('exchange') ?? undefined,
     segment: searchParams.get('segment') ?? undefined,
   })
@@ -31,11 +29,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const { range, exchangeAccountId, segment, exchange } = parsed.data
-  const result = await fetchPNLChart(supabase, user.id, range, exchangeAccountId, segment, exchange)
+  const result = await fetchAssetDistribution(
+    supabase,
+    user.id,
+    parsed.data.segment,
+    parsed.data.exchange
+  )
 
   if (!result.success) {
     return NextResponse.json({ success: false, data: null, error: result.error }, { status: 500 })
   }
+
   return NextResponse.json({ success: true, data: result.data, error: null })
 }

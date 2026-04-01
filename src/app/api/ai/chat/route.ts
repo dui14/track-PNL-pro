@@ -37,21 +37,39 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
-      const sendChunk = (data: unknown) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+      let closed = false
+
+      const sendRaw = (payload: string) => {
+        if (closed) return
+        controller.enqueue(encoder.encode(`data: ${payload}\n\n`))
       }
 
-      await startOrContinueChat(
-        supabase,
-        user.id,
-        parsed.data.message,
-        parsed.data.conversationId,
-        (chunk) => {
-          sendChunk(chunk)
-        }
-      )
+      const sendJson = (payload: Record<string, unknown>) => {
+        sendRaw(JSON.stringify(payload))
+      }
 
-      controller.close()
+      try {
+        const result = await startOrContinueChat(
+          supabase,
+          user.id,
+          parsed.data.message,
+          parsed.data.conversationId,
+          (chunk) => {
+            sendJson(chunk)
+          }
+        )
+
+        if (!result.success) {
+          sendJson({ error: result.error })
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'INTERNAL_ERROR'
+        sendJson({ error: message })
+      } finally {
+        sendRaw('[DONE]')
+        closed = true
+        controller.close()
+      }
     },
   })
 
@@ -60,6 +78,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
     },
   })
 }

@@ -1,6 +1,14 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+type MiddlewareAuthUser = { id: string }
+
+type MiddlewareAuthResponse = {
+  data: {
+    user: MiddlewareAuthUser | null
+  }
+}
+
 const PROTECTED_ROUTES = [
   '/dashboard',
   '/demo-trading',
@@ -18,10 +26,37 @@ const PUBLIC_API_ROUTES = ['/api/exchange/debug/verify']
 
 const AUTH_ROUTES = ['/login', '/register']
 
+function hasSupabaseAuthCookie(request: NextRequest): boolean {
+  return request.cookies
+    .getAll()
+    .some(({ name }) => name.startsWith('sb-') && name.includes('-auth-token'))
+}
+
+async function getUserWithRetry(
+  fetchUser: () => Promise<MiddlewareAuthResponse>,
+  retries: number
+): Promise<MiddlewareAuthUser | null> {
+  let lastError: unknown = null
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const result = await fetchUser()
+      return result.data.user
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('AUTH_FETCH_FAILED')
+}
+
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   let response = NextResponse.next({ request })
   const { pathname } = request.nextUrl
   const isPublicApiRoute = PUBLIC_API_ROUTES.some((route) => pathname.startsWith(route))
+  const isProtected = PROTECTED_ROUTES.some((route) => pathname.startsWith(route))
+  const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route))
+  const hasAuthCookie = hasSupabaseAuthCookie(request)
 
   const isApiRoute = pathname.startsWith('/api/')
   if (isApiRoute && request.method !== 'GET' && request.method !== 'HEAD') {
@@ -35,6 +70,10 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   }
 
   if (isPublicApiRoute) {
+    return response
+  }
+
+  if (!isProtected && !isAuthRoute) {
     return response
   }
 
@@ -63,15 +102,15 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
       }
     )
 
-    const authResult = await supabase.auth.getUser()
-    user = authResult.data.user
+    user = await getUserWithRetry(() => supabase.auth.getUser(), 1)
   } catch (error) {
     authUnavailable = true
     console.error('[middleware] auth check failed', error)
   }
 
-  const isProtected = PROTECTED_ROUTES.some((route) => pathname.startsWith(route))
-  const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route))
+  if (isProtected && !user && authUnavailable && hasAuthCookie) {
+    return response
+  }
 
   if (isProtected && !user && authUnavailable && isApiRoute) {
     return NextResponse.json(

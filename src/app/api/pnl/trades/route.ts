@@ -21,6 +21,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     page: searchParams.get('page') ?? undefined,
     limit: searchParams.get('limit') ?? undefined,
     exchangeAccountId: searchParams.get('exchangeAccountId') ?? undefined,
+    exchange: searchParams.get('exchange') ?? undefined,
     symbol: searchParams.get('symbol') ?? undefined,
     segment: searchParams.get('segment') ?? undefined,
   })
@@ -32,13 +33,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const { page, limit, exchangeAccountId, symbol, segment } = parsed.data
+  const { page, limit, exchangeAccountId, exchange, symbol, segment } = parsed.data
   const result = await fetchPaginatedTrades(supabase, user.id, {
     page,
     limit,
     exchangeAccountId,
+    exchange,
     symbol,
     segment,
+    executedOnly: true,
   })
 
   if (!result.success) {

@@ -1,68 +1,102 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { PNLChartPoint, TradeSegment } from '@/lib/types'
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import type { Exchange, PNLChartPoint, TradeSegment } from '@/lib/types'
 
 type ChartRangeOption = { label: string; value: string }
 
 const CHART_RANGES: ChartRangeOption[] = [
-  { label: '1W', value: 'week' },
-  { label: '1M', value: 'month' },
-  { label: '1Y', value: 'year' },
+  { label: 'W', value: 'week' },
+  { label: 'M', value: 'month' },
+  { label: 'Y', value: 'year' },
 ]
 
-function buildPaths(points: PNLChartPoint[]): { line: string; area: string } {
-  if (points.length < 2) return { line: '', area: '' }
-  const values = points.map((p) => p.cumulative_pnl)
-  const minVal = Math.min(...values)
-  const maxVal = Math.max(...values)
-  const range = maxVal - minVal || 1
-  const W = 800
-  const H = 240
-  const PAD = 20
-  const norm = (v: number) => PAD + (1 - (v - minVal) / range) * (H - PAD * 2)
-  const coords = points.map((p, i) => ({
-    x: (i / (points.length - 1)) * W,
-    y: norm(p.cumulative_pnl),
-  }))
-  const lineParts = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x.toFixed(1)},${c.y.toFixed(1)}`)
-  const line = lineParts.join(' ')
-  const area = `${line} V${H} H0 Z`
-  return { line, area }
+type ChartDatum = {
+  date: string
+  cumulative_pnl: number
+}
+
+function formatCurrency(value: number): string {
+  return value.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+function formatDateTick(value: string, range: string): string {
+  if (range === 'year') {
+    const [year, month] = value.split('-')
+    const date = new Date(Number(year), Number(month) - 1, 1)
+    return date.toLocaleDateString('en-US', { month: 'short' })
+  }
+
+  const date = new Date(value)
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function getYDomain(data: ChartDatum[]): [number, number] {
+  if (data.length === 0) return [-1, 1]
+
+  const maxAbs = Math.max(
+    ...data.map((point) => Math.abs(point.cumulative_pnl)),
+    1
+  )
+
+  return [-maxAbs, maxAbs]
 }
 
 type PNLChartProps = {
   segment: TradeSegment
+  exchange: 'all' | Exchange
 }
 
-export function PNLChart({ segment }: PNLChartProps): React.JSX.Element {
+export function PNLChart({ segment, exchange }: PNLChartProps): React.JSX.Element {
   const [range, setRange] = useState('month')
-  const [points, setPoints] = useState<PNLChartPoint[]>([])
+  const [points, setPoints] = useState<ChartDatum[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const params = new URLSearchParams({
+      range,
+      segment,
+    })
+
+    if (exchange !== 'all') {
+      params.set('exchange', exchange)
+    }
+
     setLoading(true)
-    fetch(`/api/pnl/chart?range=${range}&segment=${segment}`)
+    fetch(`/api/pnl/chart?${params.toString()}`)
       .then((r) => r.json())
       .then((data) => {
-        if (data.success) setPoints(data.data ?? [])
+        if (data.success) {
+          setPoints((data.data ?? []) as PNLChartPoint[])
+        }
         else setPoints([])
       })
       .catch(() => setPoints([]))
       .finally(() => setLoading(false))
-  }, [range, segment])
+  }, [exchange, range, segment])
 
-  const { line, area } = buildPaths(points)
-  const hasData = points.length >= 2
-  const firstDate = hasData ? new Date(points[0].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
-  const lastDate = hasData ? new Date(points[points.length - 1].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
+  const hasData = points.length > 0
+  const yDomain = getYDomain(points)
 
   return (
     <div className="bg-background-light dark:bg-background-dark p-6 rounded-xl border border-slate-200 dark:border-primary/20 shadow-sm h-full">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-lg font-bold">Cumulative PNL Performance</h2>
-          <p className="text-sm text-slate-500">Visualizing profit growth over the selected period</p>
+          <p className="text-sm text-slate-500">Time on X-axis, USD on Y-axis, centered at $0</p>
         </div>
         <div className="flex gap-2">
           {CHART_RANGES.map((r) => (
@@ -94,25 +128,52 @@ export function PNLChart({ segment }: PNLChartProps): React.JSX.Element {
           </div>
         )}
         {!loading && hasData && (
-          <svg className="w-full h-full" viewBox="0 0 800 240" preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#5f4a8c" stopOpacity="0.3" />
-                <stop offset="100%" stopColor="#5f4a8c" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <line stroke="currentColor" strokeWidth="1" className="text-slate-200 dark:text-primary/10" x1="0" x2="800" y1="60" y2="60" />
-            <line stroke="currentColor" strokeWidth="1" className="text-slate-200 dark:text-primary/10" x1="0" x2="800" y1="120" y2="120" />
-            <line stroke="currentColor" strokeWidth="1" className="text-slate-200 dark:text-primary/10" x1="0" x2="800" y1="180" y2="180" />
-            <path d={area} fill="url(#chartGradient)" />
-            <path d={line} fill="none" stroke="#5f4a8c" strokeWidth="3" strokeLinejoin="round" />
-          </svg>
-        )}
-        {!loading && hasData && (
-          <div className="absolute bottom-0 left-0 right-0 flex justify-between px-2 text-[10px] text-slate-500 font-bold uppercase">
-            <span>{firstDate}</span>
-            <span>{lastDate}</span>
-          </div>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={points}
+              margin={{ top: 12, right: 12, left: 0, bottom: 12 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" opacity={0.35} />
+              <XAxis
+                dataKey="date"
+                tick={{ fill: '#64748b', fontSize: 11 }}
+                tickFormatter={(value) => formatDateTick(String(value), range)}
+                interval="preserveStartEnd"
+                minTickGap={24}
+                axisLine={{ stroke: '#cbd5e1', opacity: 0.5 }}
+                tickLine={false}
+                label={{ value: 'Time', position: 'insideBottomRight', offset: -6, fill: '#64748b', fontSize: 11 }}
+              />
+              <YAxis
+                tick={{ fill: '#64748b', fontSize: 11 }}
+                axisLine={{ stroke: '#cbd5e1', opacity: 0.5 }}
+                tickLine={false}
+                domain={yDomain}
+                width={64}
+                tickFormatter={(value) => `$${Number(value).toFixed(0)}`}
+                label={{ value: '$', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 11 }}
+              />
+              <Tooltip
+                formatter={(value) => [`$${formatCurrency(Number(value))}`, 'Cumulative PNL']}
+                labelFormatter={(value) => formatDateTick(String(value), range)}
+                contentStyle={{
+                  borderRadius: 10,
+                  border: '1px solid #cbd5e1',
+                  backgroundColor: 'rgba(248, 250, 252, 0.96)',
+                  color: '#0f172a',
+                }}
+              />
+              <ReferenceLine y={0} stroke="#0f172a" strokeOpacity={0.4} strokeDasharray="6 4" />
+              <Line
+                dataKey="cumulative_pnl"
+                type="monotone"
+                stroke="#0f766e"
+                strokeWidth={3}
+                dot={false}
+                activeDot={{ r: 4, fill: '#0f766e' }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
         )}
       </div>
     </div>

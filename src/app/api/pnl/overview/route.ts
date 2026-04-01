@@ -18,6 +18,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const { searchParams } = req.nextUrl
   const parsed = PNLOverviewQuerySchema.safeParse({
+    exchange: searchParams.get('exchange') ?? undefined,
     segment: searchParams.get('segment') ?? undefined,
   })
 
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const result = await fetchDashboardOverview(supabase, user.id, parsed.data.segment)
+  const result = await fetchDashboardOverview(supabase, user.id, parsed.data.segment, parsed.data.exchange)
 
   if (!result.success) {
     return NextResponse.json({ success: false, data: null, error: result.error }, { status: 500 })

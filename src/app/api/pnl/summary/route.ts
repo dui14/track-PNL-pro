@@ -20,6 +20,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const parsed = PNLSummaryQuerySchema.safeParse({
     range: searchParams.get('range') ?? undefined,
     exchangeAccountId: searchParams.get('exchangeAccountId') ?? undefined,
+    exchange: searchParams.get('exchange') ?? undefined,
     segment: searchParams.get('segment') ?? undefined,
   })
 
@@ -30,8 +31,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const { range, exchangeAccountId, segment } = parsed.data
-  const result = await fetchPNLSummary(supabase, user.id, range, exchangeAccountId, segment)
+  const { range, exchangeAccountId, segment, exchange } = parsed.data
+  const result = await fetchPNLSummary(supabase, user.id, range, exchangeAccountId, segment, exchange)
 
   if (!result.success) {
     return NextResponse.json({ success: false, data: null, error: result.error }, { status: 500 })

@@ -11,12 +11,12 @@ const BASE_URL = 'https://api.binance.com'
 const FUTURES_URL = 'https://fapi.binance.com'
 const REQUEST_TIMEOUT = 10_000
 const RECV_WINDOW = 10_000
-const DEFAULT_LOOKBACK_MS = 360 * 24 * 60 * 60 * 1000
+const DEFAULT_LOOKBACK_MS = 365 * 24 * 60 * 60 * 1000
 const QUOTE_ASSETS = ['USDT', 'BUSD', 'USDC', 'BTC', 'ETH', 'BNB']
 const STABLE_ASSETS = new Set(['USDT', 'BUSD', 'USDC', 'FDUSD', 'DAI', 'TUSD'])
 const FUTURES_INCOME_CHUNK_MS = 7 * 24 * 60 * 60 * 1000
 const FUTURES_USER_TRADES_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
-const FUTURES_USER_TRADES_LOOKBACK_MS = 360 * 24 * 60 * 60 * 1000
+const FUTURES_USER_TRADES_LOOKBACK_MS = 365 * 24 * 60 * 60 * 1000
 const FUTURES_INCOME_TYPES = ['REALIZED_PNL', 'FUNDING_FEE', 'COMMISSION'] as const
 const EARN_ASSET_PREFIXES = ['LD', 'BVOL', 'DVOL']
 const LEVERAGED_SUFFIXES = ['UP', 'DOWN', 'BEAR', 'BULL', '3L', '3S', '2L', '2S']
@@ -287,22 +287,142 @@ export class BinanceAdapter implements ExchangeAdapter {
     since?: Date
   ): Promise<ExchangeAdapterTrade[]> {
     const startTime = since ? since.getTime() : Date.now() - DEFAULT_LOOKBACK_MS
+    const fallbackSymbols = COMMON_BASE_ASSETS.map((base) => `${base}USDT`)
+    const recentTrades = await this.fetchRecentFuturesTrades(apiKey, apiSecret, fallbackSymbols)
+    let primaryTrades = this.deduplicateFuturesTrades(recentTrades)
 
-    const incomeRecords = await this.fetchFuturesIncome(apiKey, apiSecret, startTime)
-    if (incomeRecords.length > 0) {
-      return incomeRecords.map((r) => this.normalizeFuturesIncome(r))
+    if (primaryTrades.length === 0) {
+      const historicalTrades = await this.fetchHistoricalFuturesTrades(
+        apiKey,
+        apiSecret,
+        fallbackSymbols,
+        startTime
+      )
+      primaryTrades = this.deduplicateFuturesTrades(historicalTrades)
     }
 
-    const fallbackSymbols = COMMON_BASE_ASSETS.map((base) => `${base}USDT`)
+    const incomeRecords = await this.fetchFuturesIncome(apiKey, apiSecret, startTime)
+
+    if (primaryTrades.length === 0) {
+      const incomeSymbols = Array.from(
+        new Set(
+          incomeRecords
+            .map((record) => String(record.symbol ?? '').trim().toUpperCase())
+            .filter((symbol) => symbol.length > 0)
+        )
+      )
+
+      if (incomeSymbols.length > 0) {
+        const recoveredRecentTrades = await this.fetchRecentFuturesTrades(apiKey, apiSecret, incomeSymbols)
+        primaryTrades = this.deduplicateFuturesTrades(recoveredRecentTrades)
+      }
+    }
+
+    const supplementalIncomeTrades = this.normalizeSupplementalFuturesIncome(incomeRecords, primaryTrades)
+
+    if (primaryTrades.length > 0) {
+      return this.deduplicateFuturesTrades([...primaryTrades, ...supplementalIncomeTrades])
+    }
+
+    return this.deduplicateFuturesTrades(supplementalIncomeTrades)
+  }
+
+  private async fetchRecentFuturesTrades(
+    apiKey: string,
+    apiSecret: string,
+    symbols: string[]
+  ): Promise<ExchangeAdapterTrade[]> {
+    const uniqueSymbols = Array.from(
+      new Set(symbols.map((symbol) => symbol.trim().toUpperCase()).filter((symbol) => symbol.length > 0))
+    )
+
     const allTrades: ExchangeAdapterTrade[] = []
 
-    for (const symbol of fallbackSymbols) {
+    for (const symbol of uniqueSymbols) {
+      await sleep(80)
+      const trades = await this.fetchRecentFuturesTradesForSymbol(apiKey, apiSecret, symbol)
+      allTrades.push(...trades)
+    }
+
+    return allTrades
+  }
+
+  private async fetchHistoricalFuturesTrades(
+    apiKey: string,
+    apiSecret: string,
+    symbols: string[],
+    startTime: number
+  ): Promise<ExchangeAdapterTrade[]> {
+    const uniqueSymbols = Array.from(
+      new Set(symbols.map((symbol) => symbol.trim().toUpperCase()).filter((symbol) => symbol.length > 0))
+    )
+
+    const allTrades: ExchangeAdapterTrade[] = []
+
+    for (const symbol of uniqueSymbols) {
       await sleep(80)
       const trades = await this.fetchFuturesTradesForSymbol(apiKey, apiSecret, symbol, startTime)
       allTrades.push(...trades)
     }
 
     return allTrades
+  }
+
+  private deduplicateFuturesTrades(trades: ExchangeAdapterTrade[]): ExchangeAdapterTrade[] {
+    const dedup = new Set<string>()
+
+    return trades.filter((trade) => {
+      const key = `${trade.symbol}:${trade.external_trade_id}`
+      if (dedup.has(key)) return false
+      dedup.add(key)
+      return true
+    })
+  }
+
+  private extractFuturesUserTradeIds(trades: ExchangeAdapterTrade[]): Set<string> {
+    const tradeIds = new Set<string>()
+
+    for (const trade of trades) {
+      const raw = trade.raw_data as Record<string, unknown> | null
+      const rawId = raw ? raw.id : undefined
+
+      if (typeof rawId === 'number' || typeof rawId === 'string') {
+        const normalizedId = String(rawId).trim()
+        if (normalizedId.length > 0) {
+          tradeIds.add(normalizedId)
+        }
+        continue
+      }
+
+      const idFromExternal = /^futures_(.+)$/.exec(trade.external_trade_id)?.[1]
+      if (idFromExternal && idFromExternal.length > 0) {
+        tradeIds.add(idFromExternal)
+      }
+    }
+
+    return tradeIds
+  }
+
+  private normalizeSupplementalFuturesIncome(
+    incomeRecords: BinanceFuturesIncome[],
+    primaryTrades: ExchangeAdapterTrade[]
+  ): ExchangeAdapterTrade[] {
+    if (incomeRecords.length === 0) return []
+
+    const userTradeIds = this.extractFuturesUserTradeIds(primaryTrades)
+
+    return incomeRecords
+      .filter((record) => {
+        const incomeType = String(record.incomeType ?? '').toUpperCase()
+        const tradeId = String(record.tradeId ?? '').trim()
+
+        if (incomeType === 'REALIZED_PNL' && tradeId.length > 0 && userTradeIds.has(tradeId)) {
+          return false
+        }
+
+        return true
+      })
+      .map((record) => this.normalizeFuturesIncome(record))
   }
 
   private async fetchFuturesIncome(
@@ -427,6 +547,40 @@ export class BinanceAdapter implements ExchangeAdapter {
       .map((t) => this.normalizeFuturesTrade(t))
   }
 
+  private async fetchRecentFuturesTradesForSymbol(
+    apiKey: string,
+    apiSecret: string,
+    symbol: string
+  ): Promise<ExchangeAdapterTrade[]> {
+    const timestamp = Date.now()
+    const params = new URLSearchParams({
+      symbol,
+      limit: '1000',
+      timestamp: String(timestamp),
+    })
+    params.append('signature', sign(params.toString(), apiSecret))
+
+    const response = await fetchWithRetry(`${FUTURES_URL}/fapi/v1/userTrades?${params}`, {
+      headers: { 'X-MBX-APIKEY': apiKey },
+    })
+
+    if (!response.ok) {
+      const err = (await response.json()) as { code?: number }
+      if (err?.code === -1121) return []
+      if (err?.code === -4061) return []
+      return []
+    }
+
+    const data = (await response.json()) as BinanceFuturesTrade[]
+    if (!Array.isArray(data) || data.length === 0) {
+      return []
+    }
+
+    return data
+      .sort((a, b) => a.time - b.time)
+      .map((trade) => this.normalizeFuturesTrade(trade))
+  }
+
   private normalizeSpotTrade(t: BinanceSpotTrade): ExchangeAdapterTrade {
     return {
       external_trade_id: `spot_${t.id}`,
@@ -462,8 +616,10 @@ export class BinanceAdapter implements ExchangeAdapter {
   private normalizeFuturesIncome(r: BinanceFuturesIncome): ExchangeAdapterTrade {
     const incomeValue = parseFloat(r.income)
     const fundingFee = r.incomeType === 'FUNDING_FEE' ? incomeValue : 0
+    const incomeType = String(r.incomeType ?? '').trim().toLowerCase() || 'unknown'
+    const tradeId = String(r.tradeId ?? '').trim() || 'na'
     return {
-      external_trade_id: `futures_income_${r.tranId}`,
+      external_trade_id: `futures_income_${incomeType}_${r.tranId}_${r.time}_${tradeId}`,
       symbol: r.symbol,
       side: incomeValue >= 0 ? 'sell' : 'buy',
       quantity: 0,

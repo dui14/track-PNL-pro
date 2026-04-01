@@ -9,9 +9,9 @@ import type { ExchangeAdapter } from './exchangeFactory'
 
 const BASE_URL = 'https://api.bitget.com'
 const REQUEST_TIMEOUT = 10_000
-const DEFAULT_LOOKBACK_MS = 360 * 24 * 60 * 60 * 1000
-const BITGET_WINDOW_MS = 90 * 24 * 60 * 60 * 1000
+const DEFAULT_LOOKBACK_MS = 365 * 24 * 60 * 60 * 1000
 const BITGET_FUTURES_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+const BITGET_HISTORY_POSITION_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000
 
 function sign(timestamp: string, method: string, requestPath: string, body: string, secret: string): string {
   const message = `${timestamp}${method.toUpperCase()}${requestPath}${body}`
@@ -93,6 +93,74 @@ export class BitgetAdapter implements ExchangeAdapter {
     credentials: ExchangeCredentials,
     startTime: number
   ): Promise<ExchangeAdapterTrade[]> {
+    const allSymbolTrades = await this.fetchSpotTradesAllSymbols(credentials, startTime)
+    if (allSymbolTrades !== null) {
+      return this.deduplicateTrades(allSymbolTrades)
+    }
+
+    return this.fetchSpotTradesByKnownSymbols(credentials, startTime)
+  }
+
+  private async fetchSpotTradesAllSymbols(
+    credentials: ExchangeCredentials,
+    startTime: number
+  ): Promise<ExchangeAdapterTrade[] | null> {
+    const allTrades: ExchangeAdapterTrade[] = []
+    const now = Date.now()
+    let windowStart = startTime
+
+    while (windowStart <= now) {
+      const windowEnd = Math.min(windowStart + BITGET_FUTURES_WINDOW_MS - 1, now)
+      let idLessThan = ''
+
+      for (let page = 0; page < 30; page += 1) {
+        const query = new URLSearchParams({
+          startTime: String(windowStart),
+          endTime: String(windowEnd),
+          limit: '100',
+        })
+        if (idLessThan) query.set('idLessThan', idLessThan)
+
+        const path = `/api/v2/spot/trade/fills?${query.toString()}`
+        const headers = this.buildHeaders(credentials, 'GET', path)
+        const response = await fetchWithRetry(`${BASE_URL}${path}`, { headers })
+        if (!response.ok) return null
+
+        const data = (await response.json()) as {
+          code: string
+          data?: Array<BitgetSpotFill>
+          msg?: string
+        }
+        if (data.code !== '00000') {
+          const message = String(data.msg ?? '').toLowerCase()
+          if (message.includes('symbol')) {
+            return null
+          }
+          break
+        }
+
+        const list = data.data ?? []
+        if (list.length === 0) break
+
+        allTrades.push(...list.map((trade) => this.normalizeSpotTrade(trade)))
+
+        const nextCursor = list[list.length - 1]?.tradeId ?? ''
+        if (!nextCursor || list.length < 100) break
+        idLessThan = nextCursor
+        await sleep(80)
+      }
+
+      windowStart = windowEnd + 1
+      await sleep(80)
+    }
+
+    return allTrades
+  }
+
+  private async fetchSpotTradesByKnownSymbols(
+    credentials: ExchangeCredentials,
+    startTime: number
+  ): Promise<ExchangeAdapterTrade[]> {
     const allTrades: ExchangeAdapterTrade[] = []
     const now = Date.now()
     const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT']
@@ -146,7 +214,7 @@ export class BitgetAdapter implements ExchangeAdapter {
       await sleep(80)
     }
 
-    return allTrades
+    return this.deduplicateTrades(allTrades)
   }
 
   private async fetchFuturesHistory(
@@ -154,14 +222,17 @@ export class BitgetAdapter implements ExchangeAdapter {
     startTime: number
   ): Promise<ExchangeAdapterTrade[]> {
     const productTypes = ['USDT-FUTURES', 'COIN-FUTURES', 'USDC-FUTURES']
+    const recentTrades = await this.fetchRecentFuturesHistory(credentials, productTypes)
+
     const allTrades: ExchangeAdapterTrade[] = []
     const now = Date.now()
+    const historyStartTime = startTime
 
     for (const productType of productTypes) {
-      let windowStart = startTime
+      let windowStart = historyStartTime
 
       while (windowStart <= now) {
-        const windowEnd = Math.min(windowStart + BITGET_WINDOW_MS - 1, now)
+        const windowEnd = Math.min(windowStart + BITGET_FUTURES_WINDOW_MS - 1, now)
         let idLessThan = ''
 
         for (let page = 0; page < 30; page += 1) {
@@ -204,7 +275,190 @@ export class BitgetAdapter implements ExchangeAdapter {
       await sleep(80)
     }
 
+    const deduplicatedTrades = this.deduplicateFuturesTrades([...recentTrades, ...allTrades])
+    const hasRealizedPnl = deduplicatedTrades.some((trade) => trade.realized_pnl !== null)
+    if (deduplicatedTrades.length > 0 && hasRealizedPnl) {
+      return deduplicatedTrades
+    }
+
+    const fallbackPositionTrades = await this.fetchPositionHistoryFallback(credentials, startTime)
+    return this.deduplicateFuturesTrades([...deduplicatedTrades, ...fallbackPositionTrades])
+  }
+
+  private async fetchRecentFuturesHistory(
+    credentials: ExchangeCredentials,
+    productTypes: string[]
+  ): Promise<ExchangeAdapterTrade[]> {
+    const allTrades: ExchangeAdapterTrade[] = []
+
+    for (const productType of productTypes) {
+      let idLessThan = ''
+
+      for (let page = 0; page < 30; page += 1) {
+        const query = new URLSearchParams({
+          productType,
+          limit: '100',
+        })
+        if (idLessThan) query.set('idLessThan', idLessThan)
+
+        const path = `/api/v2/mix/order/fill-history?${query.toString()}`
+        const headers = this.buildHeaders(credentials, 'GET', path)
+        const response = await fetchWithRetry(`${BASE_URL}${path}`, { headers })
+        if (!response.ok) break
+
+        const data = (await response.json()) as {
+          code: string
+          data?: {
+            fillList?: Array<BitgetFuturesFill> | null
+            endId?: string | null
+          }
+        }
+
+        if (data.code !== '00000') break
+
+        const list = data.data?.fillList ?? []
+        if (list.length === 0) break
+
+        allTrades.push(...list.map((trade) => this.normalizeFuturesTrade(trade)))
+
+        const nextCursor = data.data?.endId ?? ''
+        if (!nextCursor || list.length < 100) break
+        idLessThan = nextCursor
+        await sleep(80)
+      }
+
+      await sleep(80)
+    }
+
     return allTrades
+  }
+
+  private async fetchPositionHistoryFallback(
+    credentials: ExchangeCredentials,
+    startTime: number
+  ): Promise<ExchangeAdapterTrade[]> {
+    const allTrades: ExchangeAdapterTrade[] = []
+    const now = Date.now()
+    const historyStartTime = Math.max(startTime, now - BITGET_HISTORY_POSITION_LOOKBACK_MS)
+    let lastEndId = ''
+
+    for (let page = 0; page < 30; page += 1) {
+      const query = new URLSearchParams({
+        startTime: String(historyStartTime),
+        endTime: String(now),
+        pageSize: '100',
+      })
+      if (lastEndId) query.set('lastEndId', lastEndId)
+
+      const path = `/api/v2/mix/position/history-position?${query.toString()}`
+      const headers = this.buildHeaders(credentials, 'GET', path)
+      const response = await fetchWithRetry(`${BASE_URL}${path}`, { headers })
+      if (!response.ok) break
+
+      const data = (await response.json()) as {
+        code: string
+        data?: BitgetPositionHistoryData
+      }
+
+      if (data.code !== '00000') break
+
+      const rows = this.extractPositionHistoryRows(data.data ?? null)
+      if (rows.length === 0) break
+
+      for (const row of rows) {
+        const normalized = this.normalizePositionHistoryTrade(row)
+        if (normalized) {
+          allTrades.push(normalized)
+        }
+      }
+
+      const nextCursor = this.extractPositionHistoryCursor(data.data ?? null)
+      if (!nextCursor || rows.length < 100) break
+      lastEndId = nextCursor
+      await sleep(80)
+    }
+
+    return allTrades
+  }
+
+  private extractPositionHistoryRows(data: BitgetPositionHistoryData): BitgetHistoryPosition[] {
+    if (Array.isArray(data)) return data
+    if (data && Array.isArray(data.list)) return data.list
+    return []
+  }
+
+  private extractPositionHistoryCursor(data: BitgetPositionHistoryData): string {
+    if (!data || Array.isArray(data)) return ''
+    if (typeof data.lastEndId === 'string' && data.lastEndId) return data.lastEndId
+    if (typeof data.endId === 'string' && data.endId) return data.endId
+    return ''
+  }
+
+  private normalizePositionHistoryTrade(position: BitgetHistoryPosition): ExchangeAdapterTrade | null {
+    const symbol = (position.symbol ?? '').replace(/_/g, '')
+    if (!symbol) return null
+
+    const openFee = parseFloat(position.openFee ?? '0')
+    const closeFee = parseFloat(position.closeFee ?? '0')
+    const fee = Math.abs((Number.isFinite(openFee) ? openFee : 0) + (Number.isFinite(closeFee) ? closeFee : 0))
+    const netProfit = parseFloat(position.netProfit ?? '')
+    const parsedPnl = Number.isFinite(netProfit) ? netProfit : parseFloat(position.pnl ?? '')
+    const pnl = Number.isFinite(parsedPnl) ? parsedPnl : null
+    if (pnl === null) return null
+
+    const parsedFunding = parseFloat(position.totalFunding ?? '0')
+    const fundingFee = Number.isFinite(parsedFunding) ? parsedFunding : 0
+    const side: 'buy' | 'sell' = (position.holdSide ?? '').toLowerCase() === 'short' ? 'buy' : 'sell'
+    const tradedAtRaw = parseInt(
+      position.uTime ?? position.utime ?? position.cTime ?? position.ctime ?? String(Date.now()),
+      10
+    )
+    const tradedAtTs = Number.isFinite(tradedAtRaw)
+      ? tradedAtRaw > 1_000_000_000_000
+        ? tradedAtRaw
+        : tradedAtRaw * 1000
+      : Date.now()
+    const tradedAt = new Date(tradedAtTs).toISOString()
+
+    const tradeIdParts = [
+      position.positionId ?? position.trackingNo ?? '',
+      position.symbol ?? '',
+      position.uTime ?? position.utime ?? position.cTime ?? position.ctime ?? '',
+    ].filter((part) => part.length > 0)
+    const externalTradeId =
+      tradeIdParts.join(':') ||
+      `futures_position_${position.uTime ?? position.utime ?? position.cTime ?? position.ctime ?? Date.now()}`
+
+    return {
+      external_trade_id: externalTradeId,
+      symbol,
+      side,
+      quantity: 0,
+      price: 0,
+      fee,
+      fee_currency: position.marginCoin ?? 'USDT',
+      realized_pnl: pnl,
+      funding_fee: fundingFee,
+      income_type: 'history_position',
+      trade_type: 'futures',
+      traded_at: tradedAt,
+      raw_data: position as unknown as Record<string, unknown>,
+    }
+  }
+
+  private deduplicateFuturesTrades(trades: ExchangeAdapterTrade[]): ExchangeAdapterTrade[] {
+    return this.deduplicateTrades(trades)
+  }
+
+  private deduplicateTrades(trades: ExchangeAdapterTrade[]): ExchangeAdapterTrade[] {
+    const dedup = new Set<string>()
+
+    return trades.filter((trade) => {
+      const key = `${trade.symbol}:${trade.external_trade_id}`
+      if (dedup.has(key)) return false
+      dedup.add(key)
+      return true
+    })
   }
 
   async fetchOpenPositions(credentials: ExchangeCredentials): Promise<UnrealizedPosition[]> {
@@ -292,15 +546,26 @@ export class BitgetAdapter implements ExchangeAdapter {
   }
 
   private normalizeFuturesTrade(trade: BitgetFuturesFill): ExchangeAdapterTrade {
-    const fee = trade.fee ? Math.abs(parseFloat(trade.fee)) : 0
-    const pnl = trade.pnl ? parseFloat(trade.pnl) : null
+    const parsedFee = trade.fee ? Math.abs(parseFloat(trade.fee)) : 0
+    const fee = Number.isFinite(parsedFee) ? parsedFee : 0
+    const parsedPnl = trade.pnl ? parseFloat(trade.pnl) : null
+    const pnl = parsedPnl !== null && Number.isFinite(parsedPnl) ? parsedPnl : null
+    const rawQuantity =
+      trade.size ?? trade.baseVolume ?? trade.fillQty ?? trade.fillSz ?? trade.qty ?? '0'
+    const rawPrice =
+      trade.price ?? trade.priceAvg ?? trade.fillPrice ?? trade.avgPrice ?? '0'
+    const rawSide = trade.side ?? trade.tradeSide ?? 'buy'
+    const parsedQuantity = parseFloat(rawQuantity)
+    const parsedPrice = parseFloat(rawPrice)
+    const quantity = Number.isFinite(parsedQuantity) ? Math.abs(parsedQuantity) : 0
+    const price = Number.isFinite(parsedPrice) ? parsedPrice : 0
 
     return {
       external_trade_id: trade.tradeId ?? trade.orderId ?? `futures_${trade.cTime ?? Date.now()}`,
       symbol: (trade.symbol ?? '').replace(/_/g, ''),
-      side: (trade.side ?? '').toLowerCase() === 'sell' ? 'sell' : 'buy',
-      quantity: Math.abs(parseFloat(trade.size ?? trade.baseVolume ?? '0')),
-      price: parseFloat(trade.price ?? trade.priceAvg ?? '0'),
+      side: rawSide.toLowerCase() === 'sell' ? 'sell' : 'buy',
+      quantity,
+      price,
       fee,
       fee_currency: trade.feeCoin ?? trade.marginCoin ?? 'USDT',
       realized_pnl: pnl,
@@ -364,16 +629,52 @@ type BitgetFuturesFill = {
   orderId?: string
   symbol?: string
   side?: string
+  tradeSide?: string
   size?: string
+  qty?: string
+  fillQty?: string
+  fillSz?: string
   baseVolume?: string
   price?: string
   priceAvg?: string
+  fillPrice?: string
+  avgPrice?: string
   fee?: string
   feeCoin?: string
   marginCoin?: string
   pnl?: string
   tradeScope?: string
   cTime?: string
+}
+
+type BitgetPositionHistoryData =
+  | BitgetHistoryPosition[]
+  | {
+      list?: BitgetHistoryPosition[] | null
+      endId?: string | null
+      lastEndId?: string | null
+    }
+  | null
+
+type BitgetHistoryPosition = {
+  positionId?: string
+  trackingNo?: string
+  symbol?: string
+  holdSide?: string
+  closeTotalPos?: string
+  total?: string
+  openAvgPrice?: string
+  closeAvgPrice?: string
+  pnl?: string
+  netProfit?: string
+  openFee?: string
+  closeFee?: string
+  totalFunding?: string
+  marginCoin?: string
+  uTime?: string
+  utime?: string
+  cTime?: string
+  ctime?: string
 }
 
 type BitgetBalance = {

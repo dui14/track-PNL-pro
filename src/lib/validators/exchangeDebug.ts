@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-const SupportedDebugExchangeSchema = z.enum(['binance', 'okx', 'bybit', 'bitget'])
+const SupportedDebugExchangeSchema = z.enum(['binance', 'okx', 'bybit', 'bitget', 'gateio'])
 
 export const ExchangeDebugVerifySchema = z.object({
   exchange: SupportedDebugExchangeSchema,

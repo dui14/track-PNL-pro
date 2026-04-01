@@ -9,9 +9,13 @@ import {
   updateConversationTitle,
   deleteConversation,
 } from '@/lib/db/chatDb'
-import { streamChatCompletion, buildSystemPrompt } from '@/lib/adapters/llmAdapter'
+import { runAgentLoop } from '@/lib/agent-loop'
 
-type StreamCallback = (chunk: { type: 'delta' | 'done' | 'error'; content?: string; conversationId?: string }) => void
+type StreamCallback = (chunk: {
+  content?: string
+  conversationId?: string
+  error?: string
+}) => void
 
 export async function startOrContinueChat(
   supabase: SupabaseClient,
@@ -35,35 +39,55 @@ export async function startOrContinueChat(
     }
   }
 
-  await createChatMessage(supabase, conversation.id, 'user', message)
-
   const history = await getConversationMessages(supabase, conversation.id, userId)
-  const messages = [
-    { role: 'system' as const, content: buildSystemPrompt() },
-    ...history
-      .filter((m) => m.role !== 'system')
-      .map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
-  ]
+  const historyForAgent = history
+    .filter((item) => item.role === 'user' || item.role === 'assistant')
+    .map((item) => ({
+      role: item.role as 'user' | 'assistant',
+      content: item.content,
+    }))
 
-  try {
-    const { content, tokensUsed } = await streamChatCompletion(messages, (chunk) => {
-      onChunk(chunk)
-    })
-
-    await createChatMessage(supabase, conversation.id, 'assistant', content, tokensUsed)
-
-    if (history.length === 1) {
-      await updateConversationTitle(supabase, conversation.id, message.slice(0, 60))
-    }
-
-    onChunk({ type: 'done', conversationId: conversation.id })
-  } catch (err) {
-    console.error('[aiService] streamChatCompletion failed:', err)
-    onChunk({ type: 'error', content: 'INTERNAL_ERROR' })
+  const userMessage = await createChatMessage(supabase, conversation.id, 'user', message)
+  if (!userMessage) {
+    onChunk({ error: 'INTERNAL_ERROR', conversationId: conversation.id })
     return { success: false, error: 'INTERNAL_ERROR' }
+  }
+
+  onChunk({ conversationId: conversation.id })
+
+  let assistantContent = ''
+  const agentResult = await runAgentLoop(
+    message,
+    historyForAgent,
+    userId,
+    (contentChunk) => {
+      assistantContent += contentChunk
+      onChunk({ content: contentChunk, conversationId: conversation.id })
+    }
+  )
+
+  if (!agentResult.success) {
+    console.error('[aiService] runAgentLoop failed:', agentResult.error)
+    onChunk({ error: agentResult.error, conversationId: conversation.id })
+    return { success: false, error: agentResult.error }
+  }
+
+  const finalAssistantContent = assistantContent.trim() || agentResult.data.content
+  const assistantMessage = await createChatMessage(
+    supabase,
+    conversation.id,
+    'assistant',
+    finalAssistantContent,
+    agentResult.data.tokensUsed
+  )
+
+  if (!assistantMessage) {
+    onChunk({ error: 'INTERNAL_ERROR', conversationId: conversation.id })
+    return { success: false, error: 'INTERNAL_ERROR' }
+  }
+
+  if (history.length === 0) {
+    await updateConversationTitle(supabase, conversation.id, message.slice(0, 60))
   }
 
   return { success: true, data: { conversationId: conversation.id } }

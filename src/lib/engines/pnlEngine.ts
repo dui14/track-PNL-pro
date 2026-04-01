@@ -56,23 +56,24 @@ export function buildPNLTimeSeries(
 ): PNLChartPoint[] {
   const tradesWithPNL = trades.filter((t) => t.realized_pnl !== null)
 
-  const grouped = new Map<string, number>()
+  const buckets = buildBuckets(range)
+  const grouped = new Map<string, number>(buckets.map((bucket) => [bucket, 0]))
 
   for (const trade of tradesWithPNL) {
-    const date = formatDateKey(new Date(trade.traded_at), range)
-    const existing = grouped.get(date) ?? 0
-    grouped.set(date, existing + Number(trade.realized_pnl))
+    const key = toBucketKey(new Date(trade.traded_at), range)
+    if (!grouped.has(key)) continue
+    const existing = grouped.get(key) ?? 0
+    grouped.set(key, existing + Number(trade.realized_pnl))
   }
 
-  const sortedDates = Array.from(grouped.keys()).sort()
   let cumulative = 0
   const points: PNLChartPoint[] = []
 
-  for (const date of sortedDates) {
-    const pnl = grouped.get(date) ?? 0
+  for (const bucket of buckets) {
+    const pnl = grouped.get(bucket) ?? 0
     cumulative += pnl
     points.push({
-      date,
+      date: bucket,
       pnl: parseFloat(pnl.toFixed(8)),
       cumulative_pnl: parseFloat(cumulative.toFixed(8)),
     })
@@ -81,35 +82,73 @@ export function buildPNLTimeSeries(
   return points
 }
 
-function formatDateKey(date: Date, range: 'day' | 'week' | 'month' | 'year'): string {
+function toBucketKey(date: Date, range: 'day' | 'week' | 'month' | 'year'): string {
+  if (range === 'day') {
+    return formatHourKey(date)
+  }
+
+  if (range === 'year') {
+    return formatMonthKey(date)
+  }
+
+  return formatDayKey(date)
+}
+
+function buildBuckets(range: 'day' | 'week' | 'month' | 'year'): string[] {
+  const now = new Date()
+
+  if (range === 'day') {
+    const buckets: string[] = []
+    for (let i = 23; i >= 0; i -= 1) {
+      const d = new Date(now)
+      d.setHours(now.getHours() - i, 0, 0, 0)
+      buckets.push(formatHourKey(d))
+    }
+    return buckets
+  }
+
+  if (range === 'year') {
+    const buckets: string[] = []
+    for (let i = 11; i >= 0; i -= 1) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      buckets.push(formatMonthKey(d))
+    }
+    return buckets
+  }
+
+  const windowDays = range === 'week' ? 7 : 30
+  const buckets: string[] = []
+  for (let i = windowDays - 1; i >= 0; i -= 1) {
+    const d = new Date(now)
+    d.setDate(now.getDate() - i)
+    d.setHours(0, 0, 0, 0)
+    buckets.push(formatDayKey(d))
+  }
+  return buckets
+}
+
+function formatDayKey(date: Date): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
 
-  switch (range) {
-    case 'day':
-      return `${year}-${month}-${day}`
-    case 'week': {
-      const weekStart = getWeekStart(date)
-      const wy = weekStart.getFullYear()
-      const wm = String(weekStart.getMonth() + 1).padStart(2, '0')
-      const wd = String(weekStart.getDate()).padStart(2, '0')
-      return `${wy}-${wm}-${wd}`
-    }
-    case 'month':
-      return `${year}-${month}`
-    case 'year':
-      return String(year)
-  }
+  return `${year}-${month}-${day}`
 }
 
-function getWeekStart(date: Date): Date {
-  const d = new Date(date)
-  const day = d.getDay()
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-  d.setDate(diff)
-  d.setHours(0, 0, 0, 0)
-  return d
+function formatMonthKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+
+  return `${year}-${month}`
+}
+
+function formatHourKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+
+  return `${year}-${month}-${day} ${hour}:00`
 }
 
 export function buildPNLCalendarDays(trades: Trade[], year: number, month: number): PNLCalendarDay[] {
