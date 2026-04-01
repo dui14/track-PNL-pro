@@ -89,8 +89,15 @@ CREATE TABLE IF NOT EXISTS demo_trades (
   symbol       TEXT NOT NULL,
   side         TEXT NOT NULL CHECK (side IN ('buy','sell')),
   order_type   TEXT NOT NULL CHECK (order_type IN ('market','limit')),
+  margin_mode  TEXT CHECK (margin_mode IN ('cross','isolated')) DEFAULT 'cross',
+  leverage     INT CHECK (leverage >= 1 AND leverage <= 125) DEFAULT 1,
   quantity     NUMERIC(28,10) NOT NULL,
   entry_price  NUMERIC(28,10) NOT NULL,
+  initial_margin NUMERIC(28,10),
+  position_notional NUMERIC(28,10),
+  take_profit  NUMERIC(28,10),
+  stop_loss    NUMERIC(28,10),
+  market_price_at_open NUMERIC(28,10),
   exit_price   NUMERIC(28,10),
   realized_pnl NUMERIC(28,10),
   status       TEXT NOT NULL CHECK (status IN ('open','closed','cancelled')),
@@ -113,6 +120,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   role            TEXT NOT NULL CHECK (role IN ('user','assistant','system')),
   content         TEXT NOT NULL,
   tokens_used     INT,
+  analysis_meta   JSONB,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
