@@ -34,10 +34,38 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const { symbol, side, orderType, quantity, price } = parsed.data
-  const entryPrice = orderType === 'market' ? price ?? 0 : price!
+  const {
+    symbol,
+    side,
+    orderType,
+    price,
+    marketPrice,
+    leverage,
+    marginMode,
+    initialMargin,
+    takeProfit,
+    stopLoss,
+  } = parsed.data
+  const entryPrice = orderType === 'market' ? marketPrice ?? 0 : price ?? 0
+  const marketPriceAtOpen = marketPrice ?? entryPrice
+  const positionNotional = initialMargin * leverage
+  const quantity = positionNotional / entryPrice
 
   if (!entryPrice || entryPrice <= 0) {
+    return NextResponse.json(
+      { success: false, data: null, error: 'VALIDATION_ERROR' },
+      { status: 400 }
+    )
+  }
+
+  if (!marketPriceAtOpen || marketPriceAtOpen <= 0) {
+    return NextResponse.json(
+      { success: false, data: null, error: 'VALIDATION_ERROR' },
+      { status: 400 }
+    )
+  }
+
+  if (!positionNotional || positionNotional <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
     return NextResponse.json(
       { success: false, data: null, error: 'VALIDATION_ERROR' },
       { status: 400 }
@@ -48,8 +76,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     symbol,
     side,
     orderType,
+    marginMode,
+    leverage,
     quantity,
     price: entryPrice,
+    initialMargin,
+    positionNotional,
+    marketPriceAtOpen,
+    takeProfit: takeProfit ?? null,
+    stopLoss: stopLoss ?? null,
   })
 
   if (!result.success) {

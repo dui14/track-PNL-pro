@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createSupabaseBrowserClient } from '@/lib/db/supabase-browser'
 import type { ChatConversation, UserProfile } from '@/lib/types'
@@ -17,6 +17,7 @@ const navItems = [
 export function AppSidebar(): React.JSX.Element {
   const pathname = usePathname()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [collapsed, setCollapsed] = useState(false)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [aiOpen, setAiOpen] = useState(false)
@@ -83,10 +84,7 @@ export function AppSidebar(): React.JSX.Element {
     return () => window.removeEventListener('ai-conv-change', handler)
   }, [loadConversations])
 
-  const getActiveConvId = (): string | null => {
-    if (typeof window === 'undefined') return null
-    return new URLSearchParams(window.location.search).get('conv')
-  }
+  const activeConvId = searchParams.get('conv')
 
   const handleAIToggle = (): void => {
     if (collapsed) {
@@ -103,7 +101,7 @@ export function AppSidebar(): React.JSX.Element {
     try {
       await fetch(`/api/ai/conversations/${id}`, { method: 'DELETE' })
       setConversations((prev) => prev.filter((c) => c.id !== id))
-      if (getActiveConvId() === id) router.push('/ai-assistant')
+      if (activeConvId === id) router.push('/ai-assistant')
     } finally {
       setDeletingId(null)
     }
@@ -116,7 +114,6 @@ export function AppSidebar(): React.JSX.Element {
   }
 
   const displayName = profile?.display_name ?? profile?.email?.split('@')[0] ?? ''
-  const activeConvId = getActiveConvId()
 
   return (
     <aside
@@ -130,7 +127,7 @@ export function AppSidebar(): React.JSX.Element {
             <div className="size-8 bg-primary rounded-lg flex items-center justify-center text-accent shrink-0">
               <span className="material-symbols-outlined text-sm">analytics</span>
             </div>
-            <h1 className="text-xl font-bold tracking-tight truncate">aiTrackProfit</h1>
+            <h1 className="text-xl font-bold tracking-tight truncate">Track PNL Pro</h1>
           </div>
         )}
         <button

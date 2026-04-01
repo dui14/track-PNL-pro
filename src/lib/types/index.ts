@@ -117,14 +117,86 @@ export type DemoTrade = {
   symbol: string
   side: 'buy' | 'sell'
   order_type: 'market' | 'limit'
+  margin_mode: 'cross' | 'isolated' | null
+  leverage: number | null
   quantity: number
   entry_price: number
+  initial_margin: number | null
+  position_notional: number | null
+  take_profit: number | null
+  stop_loss: number | null
+  market_price_at_open: number | null
   exit_price: number | null
   realized_pnl: number | null
   status: 'open' | 'closed' | 'cancelled'
   opened_at: string
   closed_at: string | null
   created_at: string
+}
+
+export type AgentReferenceLink = {
+  title: string
+  url: string
+  source?: string
+}
+
+export type AgentAnalysisStep =
+  | {
+      type: 'thinking_start'
+      message: string
+    }
+  | {
+      type: 'thinking_step'
+      message: string
+    }
+  | {
+      type: 'tool'
+      tool: string
+      label: string
+      status: 'loading' | 'done'
+      summary?: string
+      links?: AgentReferenceLink[]
+    }
+
+export type ChatMessageAnalysisMeta = {
+  steps: AgentAnalysisStep[]
+  elapsedSeconds?: number
+  completedAt?: string
+}
+
+export type TradingViewRssNewsFeedInfo = {
+  name: string
+  url: string
+}
+
+export type TradingViewRssNewsFeedItem =
+  | TradingViewRssNewsFeedInfo
+  | TradingViewRssNewsFeedInfo[]
+
+export type TradingViewRssNewsFeedParams = {
+  default: TradingViewRssNewsFeedItem
+} & Record<string, TradingViewRssNewsFeedItem>
+
+export type TradingViewWidgetConfig = {
+  container_id?: string
+  symbol?: string
+  interval?: string
+  timezone?: string
+  theme?: string
+  style?: string
+  locale?: string
+  width?: string | number
+  height?: string | number
+  hide_top_toolbar?: boolean
+  hide_legend?: boolean
+  save_image?: boolean
+  hide_side_toolbar?: boolean
+  allow_symbol_change?: boolean
+  withdateranges?: boolean
+  studies?: unknown[]
+  backgroundColor?: string
+  rss_news_feed?: TradingViewRssNewsFeedParams
+  [key: string]: unknown
 }
 
 export type ChatConversation = {
@@ -141,6 +213,7 @@ export type ChatMessage = {
   role: 'user' | 'assistant' | 'system'
   content: string
   tokens_used: number | null
+  analysis_meta?: ChatMessageAnalysisMeta | null
   created_at: string
 }
 

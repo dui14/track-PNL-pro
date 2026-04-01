@@ -1,3 +1,5 @@
+import { CRYPTO_RSS_NEWS_FEEDS } from '@/lib/config/rss-feeds'
+
 type GetCryptoNewsArgs = {
   query?: string
   limit?: number
@@ -25,11 +27,7 @@ type NextFetchInit = RequestInit & {
 const NEWS_LIMIT_DEFAULT = 8
 const NEWS_LIMIT_MAX = 12
 
-const NEWS_SOURCES: NewsSource[] = [
-  { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/' },
-  { name: 'Cointelegraph', url: 'https://cointelegraph.com/rss' },
-  { name: 'Decrypt', url: 'https://decrypt.co/feed' },
-]
+const NEWS_SOURCES: NewsSource[] = CRYPTO_RSS_NEWS_FEEDS
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))

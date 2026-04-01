@@ -39,6 +39,10 @@ function applyEnv(envMap) {
 
 async function run() {
   applyEnv(parseEnvFile(path.join(process.cwd(), '.env.local')))
+  const chatMessage =
+    typeof process.env.CHAT_MESSAGE === 'string' && process.env.CHAT_MESSAGE.trim().length > 0
+      ? process.env.CHAT_MESSAGE.trim()
+      : 'Tom tat nhanh PNL 30 ngay va 2 tin crypto moi nhat'
 
   const keyEnv = parseEnvFile(path.join(process.cwd(), '..', 'keydata.env'))
   const email = process.env.EMAIL || keyEnv.EMAIL
@@ -92,7 +96,7 @@ async function run() {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      message: 'Tom tat nhanh PNL 30 ngay va 2 tin crypto moi nhat',
+      message: chatMessage,
       conversationId: null,
     }),
   })
@@ -114,6 +118,7 @@ async function run() {
   let errorText = null
   let fullContent = ''
   let contentChunks = 0
+  const eventTypes = []
 
   while (true) {
     const { done: streamDone, value } = await reader.read()
@@ -135,19 +140,55 @@ async function run() {
       }
 
       try {
-        const payload = JSON.parse(payloadText)
-        if (typeof payload.conversationId === 'string') {
-          conversationId = payload.conversationId
+        const parsed = JSON.parse(payloadText)
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          continue
         }
-        if (typeof payload.error === 'string' && payload.error) {
-          errorText = payload.error
+
+        const eventType = typeof parsed.type === 'string' ? parsed.type : null
+        const eventPayload =
+          parsed.payload && typeof parsed.payload === 'object' && !Array.isArray(parsed.payload)
+            ? parsed.payload
+            : parsed
+
+        if (eventType) {
+          eventTypes.push(eventType)
         }
-        if (typeof payload.content === 'string' && payload.content) {
-          fullContent += payload.content
+
+        if (typeof eventPayload.conversationId === 'string') {
+          conversationId = eventPayload.conversationId
+        }
+
+        if (eventType === 'error') {
+          if (typeof eventPayload.message === 'string' && eventPayload.message) {
+            errorText = eventPayload.message
+          }
+        }
+
+        if (eventType === 'done') {
+          done = true
+        }
+
+        if (eventType === 'content_chunk' && typeof eventPayload.text === 'string' && eventPayload.text) {
+          fullContent += eventPayload.text
+          contentChunks += 1
+        }
+
+        if (typeof parsed.error === 'string' && parsed.error) {
+          errorText = parsed.error
+        }
+
+        if (typeof parsed.content === 'string' && parsed.content) {
+          fullContent += parsed.content
           contentChunks += 1
         }
       } catch {}
     }
+  }
+
+  const eventCounts = {}
+  for (const type of eventTypes) {
+    eventCounts[type] = (eventCounts[type] || 0) + 1
   }
 
   console.log(
@@ -159,6 +200,9 @@ async function run() {
         contentChunks,
         contentLength: fullContent.length,
         contentPreview: fullContent.slice(0, 240),
+        eventCount: eventTypes.length,
+        eventTypes,
+        eventCounts,
         error: errorText,
       },
       null,

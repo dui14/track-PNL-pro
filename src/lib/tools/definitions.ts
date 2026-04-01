@@ -1,4 +1,9 @@
-export const TOOL_NAMES = ['get_trade_history', 'get_pnl_stats', 'get_crypto_news'] as const
+export const TOOL_NAMES = [
+  'get_trade_history',
+  'get_pnl_stats',
+  'get_crypto_news',
+  'get_market_quotes',
+] as const
 export type ToolName = (typeof TOOL_NAMES)[number]
 
 export const TOOL_EXCHANGES = ['all', 'binance', 'okx', 'bybit', 'bitget', 'gateio'] as const
@@ -94,6 +99,27 @@ export const TOOL_DEFINITIONS: OpenRouterToolDefinition[] = [
           limit: {
             type: 'number',
             description: 'So luong tin tuc toi da, toi thieu 1 toi da 12',
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_market_quotes',
+      description: 'Lay gia thi truong hien tai cho tai san nhu XAUUSD, NVDA va cac symbol pho bien',
+      parameters: {
+        type: 'object',
+        properties: {
+          symbols: {
+            type: 'string',
+            description: 'Danh sach symbol, tach boi dau phay. Vi du: XAUUSD,NVDA',
+          },
+          query: {
+            type: 'string',
+            description: 'Cau hoi hoac tu khoa de he thong tu trich xuat symbol neu symbols khong duoc cung cap',
           },
         },
         additionalProperties: false,

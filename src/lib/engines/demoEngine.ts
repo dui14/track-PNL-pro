@@ -2,19 +2,18 @@ import type { DemoTrade } from '@/lib/types'
 
 const TAKER_FEE_RATE = 0.001
 
-export function calculateDemoOrderCost(
-  side: 'buy' | 'sell',
-  quantity: number,
-  price: number
-): number {
-  const notional = quantity * price
-  const fee = notional * TAKER_FEE_RATE
-  if (side === 'buy') return notional + fee
-  return fee
+export function calculateDemoOrderCost(initialMargin: number, positionNotional: number): number {
+  const fee = positionNotional * TAKER_FEE_RATE
+  return initialMargin + fee
 }
 
-export function calculateDemoRealizedPNL(trade: DemoTrade, exitPrice: number): number {
-  const { side, quantity, entry_price } = trade
+export function calculateDemoRealizedPNL(
+  trade: DemoTrade,
+  exitPrice: number,
+  closeQuantity?: number
+): number {
+  const { side, entry_price } = trade
+  const quantity = closeQuantity ?? trade.quantity
   const priceDiff = side === 'buy' ? exitPrice - entry_price : entry_price - exitPrice
   const grossPNL = priceDiff * quantity
   const exitFee = quantity * exitPrice * TAKER_FEE_RATE
@@ -23,11 +22,9 @@ export function calculateDemoRealizedPNL(trade: DemoTrade, exitPrice: number): n
 
 export function validateDemoBalance(
   balance: number,
-  side: 'buy' | 'sell',
-  quantity: number,
-  price: number
+  initialMargin: number,
+  positionNotional: number
 ): boolean {
-  if (side === 'sell') return true
-  const cost = calculateDemoOrderCost(side, quantity, price)
+  const cost = calculateDemoOrderCost(initialMargin, positionNotional)
   return balance >= cost
 }

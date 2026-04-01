@@ -41,7 +41,7 @@ export async function streamChatCompletion(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
         'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
-        'X-Title': 'aiTrackProfit',
+        'X-Title': 'Track PNL Pro',
       },
       body: JSON.stringify({
         model: DEFAULT_MODEL,
@@ -102,7 +102,7 @@ export async function streamChatCompletion(
 }
 
 export function buildSystemPrompt(): string {
-  return `You are an expert crypto trading assistant for aiTrackProfit platform. You help traders analyze their performance, understand PNL, interpret trading metrics, and improve their strategies.
+  return `You are an expert crypto trading assistant for Track PNL Pro platform. You help traders analyze their performance, understand PNL, interpret trading metrics, and improve their strategies.
 Be concise, data-driven, and educational. Always remind users that crypto trading involves significant risk.
 Never provide specific buy/sell signals or guarantee returns.`
 }

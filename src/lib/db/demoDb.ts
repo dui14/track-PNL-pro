@@ -58,26 +58,36 @@ export async function closeDemoTrade(
   supabase: SupabaseClient,
   tradeId: string,
   userId: string,
-  exitPrice: number,
-  realizedPnl: number
+  updates: {
+    exitPrice: number | null
+    realizedPnl: number
+    quantity: number
+    initialMargin: number
+    positionNotional: number
+    status: 'open' | 'closed'
+    closedAt: string | null
+  }
 ): Promise<DemoTrade | null> {
   const { data, error } = await supabase
     .from('demo_trades')
     .update({
-      exit_price: exitPrice,
-      realized_pnl: realizedPnl,
-      status: 'closed',
-      closed_at: new Date().toISOString(),
+      exit_price: updates.exitPrice,
+      realized_pnl: updates.realizedPnl,
+      quantity: updates.quantity,
+      initial_margin: updates.initialMargin,
+      position_notional: updates.positionNotional,
+      status: updates.status,
+      closed_at: updates.closedAt,
     })
     .eq('id', tradeId)
     .eq('user_id', userId)
     .eq('status', 'open')
     .select()
-    .single()
+    .maybeSingle()
 
   if (error) {
     console.error('[demoDb] closeDemoTrade failed:', error.message)
     return null
   }
-  return data as DemoTrade
+  return (data as DemoTrade | null) ?? null
 }

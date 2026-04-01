@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { buildTradingViewRssNewsFeedParams } from '@/lib/config/rss-feeds'
+import type { TradingViewWidgetConfig } from '@/lib/types'
 
 declare global {
   interface Window {
-    TradingView: {
-      widget: new (config: Record<string, unknown>) => void
+    TradingView?: {
+      widget: new (config: TradingViewWidgetConfig) => void
     }
   }
 }
@@ -29,7 +31,10 @@ export function TradingViewChart(): React.JSX.Element {
     container.innerHTML = ''
 
     const initWidget = () => {
-      new window.TradingView.widget({
+      const tradingView = window.TradingView
+      if (!tradingView) return
+
+      const widgetConfig: TradingViewWidgetConfig = {
         container_id: CONTAINER_ID,
         symbol,
         interval: '60',
@@ -46,7 +51,10 @@ export function TradingViewChart(): React.JSX.Element {
         allow_symbol_change: false,
         withdateranges: true,
         studies: [],
-      })
+        rss_news_feed: buildTradingViewRssNewsFeedParams(),
+      }
+
+      new tradingView.widget(widgetConfig)
     }
 
     if (window.TradingView) {

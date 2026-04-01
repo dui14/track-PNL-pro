@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { ChatConversation, ChatMessage } from '@/lib/types'
+import type { ChatConversation, ChatMessage, ChatMessageAnalysisMeta } from '@/lib/types'
 
 export async function createConversation(
   supabase: SupabaseClient,
@@ -69,7 +69,8 @@ export async function createChatMessage(
   conversationId: string,
   role: 'user' | 'assistant' | 'system',
   content: string,
-  tokensUsed?: number
+  tokensUsed?: number,
+  analysisMeta?: ChatMessageAnalysisMeta | null
 ): Promise<ChatMessage | null> {
   const { data, error } = await supabase
     .from('chat_messages')
@@ -78,6 +79,7 @@ export async function createChatMessage(
       role,
       content,
       tokens_used: tokensUsed ?? null,
+      analysis_meta: analysisMeta ?? null,
     })
     .select()
     .single()

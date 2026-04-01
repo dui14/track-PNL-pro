@@ -9,7 +9,7 @@ const manrope = Manrope({
 })
 
 export const metadata: Metadata = {
-  title: 'aiTrackProfit',
+  title: 'Track PNL Pro',
   description: 'Unified crypto PNL tracking and AI-assisted trading platform',
 }
 

@@ -1,5 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { ChatConversation, ChatMessage, Result } from '@/lib/types'
+import type {
+  AgentAnalysisStep,
+  AgentReferenceLink,
+  ChatConversation,
+  ChatMessage,
+  ChatMessageAnalysisMeta,
+  Result,
+} from '@/lib/types'
 import {
   createConversation,
   getConversations,
@@ -9,32 +16,78 @@ import {
   updateConversationTitle,
   deleteConversation,
 } from '@/lib/db/chatDb'
-import { runAgentLoop } from '@/lib/agent-loop'
+import { runAgentLoop, type AgentEvent } from '@/lib/agent-loop'
 
-type StreamCallback = (chunk: {
-  content?: string
+type StreamCallback = (event: AgentEvent) => void
+
+function emitServiceError(
+  onEvent: StreamCallback,
+  message: string,
   conversationId?: string
-  error?: string
-}) => void
+): void {
+  const payload: Record<string, unknown> = { message }
+  if (conversationId) {
+    payload.conversationId = conversationId
+  }
+
+  onEvent({
+    type: 'error',
+    payload,
+  })
+}
+
+function readText(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function readReferenceLinks(value: unknown): AgentReferenceLink[] | undefined {
+  if (!Array.isArray(value)) return undefined
+
+  const links: AgentReferenceLink[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      continue
+    }
+
+    const record = item as Record<string, unknown>
+    const url = readText(record.url)
+    if (!url) {
+      continue
+    }
+
+    links.push({
+      title: readText(record.title) ?? 'Chi tiet',
+      url,
+      source: readText(record.source) ?? undefined,
+    })
+  }
+
+  return links.length > 0 ? links : undefined
+}
 
 export async function startOrContinueChat(
   supabase: SupabaseClient,
   userId: string,
   message: string,
   conversationId: string | null | undefined,
-  onChunk: StreamCallback
+  model: string | undefined,
+  onEvent: StreamCallback
 ): Promise<Result<{ conversationId: string }>> {
   let conversation: ChatConversation | null = null
 
   if (conversationId) {
     conversation = await getConversationById(supabase, conversationId, userId)
     if (!conversation) {
+      emitServiceError(onEvent, 'CONVERSATION_NOT_FOUND', conversationId)
       return { success: false, error: 'CONVERSATION_NOT_FOUND' }
     }
   } else {
     const title = message.slice(0, 60)
     conversation = await createConversation(supabase, userId, title)
     if (!conversation) {
+      emitServiceError(onEvent, 'INTERNAL_ERROR')
       return { success: false, error: 'INTERNAL_ERROR' }
     }
   }
@@ -49,40 +102,119 @@ export async function startOrContinueChat(
 
   const userMessage = await createChatMessage(supabase, conversation.id, 'user', message)
   if (!userMessage) {
-    onChunk({ error: 'INTERNAL_ERROR', conversationId: conversation.id })
+    emitServiceError(onEvent, 'INTERNAL_ERROR', conversation.id)
     return { success: false, error: 'INTERNAL_ERROR' }
   }
 
-  onChunk({ conversationId: conversation.id })
-
   let assistantContent = ''
+  const analysisStartedAt = Date.now()
+  let analysisCompletedAt: string | undefined
+  const analysisSteps: AgentAnalysisStep[] = []
+
   const agentResult = await runAgentLoop(
     message,
     historyForAgent,
     userId,
-    (contentChunk) => {
-      assistantContent += contentChunk
-      onChunk({ content: contentChunk, conversationId: conversation.id })
-    }
+    (event) => {
+      if (event.type === 'tool_start') {
+        const tool = readText(event.payload.tool)
+        const label = readText(event.payload.label)
+        if (tool && label) {
+          analysisSteps.push({
+            type: 'tool',
+            tool,
+            label,
+            status: 'loading',
+          })
+        }
+      }
+
+      if (event.type === 'tool_done') {
+        const tool = readText(event.payload.tool)
+        if (tool) {
+          const summary = readText(event.payload.summary) ?? undefined
+          const links = readReferenceLinks(event.payload.links)
+          let patched = false
+
+          for (let idx = analysisSteps.length - 1; idx >= 0; idx -= 1) {
+            const step = analysisSteps[idx]
+            if (step.type === 'tool' && step.tool === tool && step.status === 'loading') {
+              analysisSteps[idx] = {
+                ...step,
+                status: 'done',
+                summary,
+                links,
+              }
+              patched = true
+              break
+            }
+          }
+
+          if (!patched) {
+            analysisSteps.push({
+              type: 'tool',
+              tool,
+              label: tool,
+              status: 'done',
+              summary,
+              links,
+            })
+          }
+        }
+      }
+
+      if (event.type === 'done') {
+        analysisCompletedAt = new Date().toISOString()
+      }
+
+      if (event.type === 'content_chunk') {
+        const text = typeof event.payload.text === 'string' ? event.payload.text : ''
+        assistantContent += text
+      }
+
+      const payload =
+        event.type === 'done'
+          ? event.payload
+          : {
+              ...event.payload,
+              conversationId: conversation.id,
+            }
+
+      onEvent({
+        type: event.type,
+        payload,
+      })
+    },
+    model
   )
 
   if (!agentResult.success) {
     console.error('[aiService] runAgentLoop failed:', agentResult.error)
-    onChunk({ error: agentResult.error, conversationId: conversation.id })
     return { success: false, error: agentResult.error }
   }
 
   const finalAssistantContent = assistantContent.trim() || agentResult.data.content
+  const elapsedSeconds = Math.max(1, Math.floor((Date.now() - analysisStartedAt) / 1000))
+  const assistantAnalysisMeta: ChatMessageAnalysisMeta | null =
+    analysisSteps.length > 0
+      ? {
+          steps: analysisSteps,
+          elapsedSeconds,
+          completedAt: analysisCompletedAt ?? new Date().toISOString(),
+        }
+      : null
+
   const assistantMessage = await createChatMessage(
     supabase,
     conversation.id,
     'assistant',
     finalAssistantContent,
-    agentResult.data.tokensUsed
+    agentResult.data.tokensUsed,
+    assistantAnalysisMeta
   )
 
   if (!assistantMessage) {
-    onChunk({ error: 'INTERNAL_ERROR', conversationId: conversation.id })
+    emitServiceError(onEvent, 'INTERNAL_ERROR', conversation.id)
     return { success: false, error: 'INTERNAL_ERROR' }
   }
 

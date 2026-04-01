@@ -10,6 +10,8 @@ type TradeReadFilter = {
   includeInactive?: boolean
 }
 
+const TRADE_QUERY_BATCH_SIZE = 1000
+
 function toFiniteNumber(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number(value ?? 0)
   return Number.isFinite(parsed) ? parsed : 0
@@ -209,43 +211,59 @@ export async function getTradesForPNL(
     executedOnly?: boolean
   }
 ): Promise<Trade[]> {
-  let query = supabase
-    .from('trades')
-    .select('*, exchange_accounts!inner(exchange,is_active)')
-    .eq('user_id', userId)
-    .order('traded_at', { ascending: true })
+  const rows: Record<string, unknown>[] = []
+  let offset = 0
 
-  if (!options.includeInactive) {
-    query = query.eq('exchange_accounts.is_active', true)
+  while (true) {
+    let query = supabase
+      .from('trades')
+      .select('*, exchange_accounts!inner(exchange,is_active)')
+      .eq('user_id', userId)
+      .order('traded_at', { ascending: true })
+      .order('id', { ascending: true })
+
+    if (!options.includeInactive) {
+      query = query.eq('exchange_accounts.is_active', true)
+    }
+
+    if (options.startDate) {
+      query = query.gte('traded_at', options.startDate)
+    }
+    if (options.endDate) {
+      query = query.lte('traded_at', options.endDate)
+    }
+    if (options.exchangeAccountId) {
+      query = query.eq('exchange_account_id', options.exchangeAccountId)
+    }
+    if (options.exchange) {
+      query = query.eq('exchange_accounts.exchange', options.exchange)
+    }
+    if (options.tradeType) {
+      query = query.eq('trade_type', options.tradeType)
+    }
+
+    if (options.executedOnly) {
+      query = query.gt('quantity', 0).gt('price', 0)
+    }
+
+    const { data, error } = await query.range(offset, offset + TRADE_QUERY_BATCH_SIZE - 1)
+
+    if (error) {
+      console.error('[tradesDb] getTradesForPNL failed:', error.message)
+      return []
+    }
+
+    const pageRows = (data ?? []) as Record<string, unknown>[]
+    rows.push(...pageRows)
+
+    if (pageRows.length < TRADE_QUERY_BATCH_SIZE) {
+      break
+    }
+
+    offset += TRADE_QUERY_BATCH_SIZE
   }
 
-  if (options.startDate) {
-    query = query.gte('traded_at', options.startDate)
-  }
-  if (options.endDate) {
-    query = query.lte('traded_at', options.endDate)
-  }
-  if (options.exchangeAccountId) {
-    query = query.eq('exchange_account_id', options.exchangeAccountId)
-  }
-  if (options.exchange) {
-    query = query.eq('exchange_accounts.exchange', options.exchange)
-  }
-  if (options.tradeType) {
-    query = query.eq('trade_type', options.tradeType)
-  }
-
-  if (options.executedOnly) {
-    query = query.gt('quantity', 0).gt('price', 0)
-  }
-
-  const { data, error } = await query
-  if (error) {
-    console.error('[tradesDb] getTradesForPNL failed:', error.message)
-    return []
-  }
-
-  const trades = (data ?? []).map((row) => {
+  const trades = rows.map((row) => {
     const record = row as Record<string, unknown>
     const accountData = record.exchange_accounts as Record<string, unknown> | Record<string, unknown>[] | null
     const exchangeRow = Array.isArray(accountData) ? accountData[0] : accountData
@@ -280,44 +298,62 @@ export async function getTradeTotals(
     executedOnly?: boolean
   }
 ): Promise<{ count: number; volumeUsd: number }> {
-  let query = supabase
-    .from('trades')
-    .select('quantity, price, exchange_accounts!inner(exchange,is_active)', { count: 'exact' })
-    .eq('user_id', userId)
+  let volumeUsd = 0
+  let totalCount = 0
+  let offset = 0
 
-  if (!options.includeInactive) {
-    query = query.eq('exchange_accounts.is_active', true)
-  }
+  while (true) {
+    let query = supabase
+      .from('trades')
+      .select('id, quantity, price, exchange_accounts!inner(exchange,is_active)', { count: 'exact' })
+      .eq('user_id', userId)
+      .order('id', { ascending: true })
 
-  if (options.exchangeAccountId) {
-    query = query.eq('exchange_account_id', options.exchangeAccountId)
-  }
-  if (options.exchange) {
-    query = query.eq('exchange_accounts.exchange', options.exchange)
-  }
-  if (options.tradeType) {
-    query = query.eq('trade_type', options.tradeType)
-  }
+    if (!options.includeInactive) {
+      query = query.eq('exchange_accounts.is_active', true)
+    }
 
-  if (options.executedOnly) {
-    query = query.gt('quantity', 0).gt('price', 0)
+    if (options.exchangeAccountId) {
+      query = query.eq('exchange_account_id', options.exchangeAccountId)
+    }
+    if (options.exchange) {
+      query = query.eq('exchange_accounts.exchange', options.exchange)
+    }
+    if (options.tradeType) {
+      query = query.eq('trade_type', options.tradeType)
+    }
+
+    if (options.executedOnly) {
+      query = query.gt('quantity', 0).gt('price', 0)
+    }
+
+    const { data, error, count } = await query.range(offset, offset + TRADE_QUERY_BATCH_SIZE - 1)
+
+    if (error) {
+      console.error('[tradesDb] getTradeTotals failed:', error.message)
+      return { count: 0, volumeUsd: 0 }
+    }
+
+    if (offset === 0) {
+      totalCount = count ?? 0
+    }
+
+    const pageRows = data ?? []
+    for (const row of pageRows) {
+      const quantity = toFiniteNumber((row as Record<string, unknown>).quantity)
+      const price = toFiniteNumber((row as Record<string, unknown>).price)
+      volumeUsd += quantity * price
+    }
+
+    if (pageRows.length < TRADE_QUERY_BATCH_SIZE) {
+      break
+    }
+
+    offset += TRADE_QUERY_BATCH_SIZE
   }
-
-  const { data, error, count } = await query
-
-  if (error) {
-    console.error('[tradesDb] getTradeTotals failed:', error.message)
-    return { count: 0, volumeUsd: 0 }
-  }
-
-  const volumeUsd = (data ?? []).reduce((total, row) => {
-    const quantity = Number(row.quantity ?? 0)
-    const price = Number(row.price ?? 0)
-    return total + quantity * price
-  }, 0)
 
   return {
-    count: count ?? 0,
+    count: totalCount,
     volumeUsd: parseFloat(volumeUsd.toFixed(8)),
   }
 }

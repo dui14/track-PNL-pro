@@ -111,7 +111,7 @@ export function RegisterForm(): React.JSX.Element {
               <span className="material-symbols-outlined text-primary">analytics</span>
             </div>
             <h2 className="text-slate-900 dark:text-white text-xl font-bold leading-tight tracking-tight">
-              aiTrackProfit
+              Track PNL Pro
             </h2>
           </div>
           <Link
@@ -312,7 +312,7 @@ export function RegisterForm(): React.JSX.Element {
 
         <footer className="mt-auto pt-10 pb-6 text-center px-4">
           <p className="text-slate-400 dark:text-slate-600 text-xs">
-            &copy; 2026 aiTrackProfit. All rights reserved.
+            &copy; 2026 Track PNL Pro. All rights reserved.
           </p>
         </footer>
       </div>
