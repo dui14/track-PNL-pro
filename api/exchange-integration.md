@@ -118,9 +118,15 @@ Authentication: HMAC-SHA256
 Key endpoints:
 ```
 GET /v5/execution/list    <- Trade history (spot + futures)
+GET /v5/position/closed-pnl <- Futures closed pnl history (bo sung realized pnl)
 GET /v5/account/wallet-balance <- Balance
 GET /v5/user/query-api    <- Validate API key
 ```
+
+Sync notes:
+- Execution list co the tra ve `closedPnl` null cho nhieu dong futures.
+- Can merge them tu `/v5/position/closed-pnl` theo `orderId` de day du calendar PNL.
+- Neu khong map duoc theo `orderId`, co the tao event PNL futures bo sung de khong mat ket qua dong lenh.
 
 ### Bitget
 
@@ -134,27 +140,43 @@ Key endpoints:
 ```
 GET /api/v2/spot/trade/fills          <- Spot trade history
 GET /api/v2/mix/order/fill-history    <- Futures trade history
+GET /api/v2/mix/position/history-position <- Futures closed position fallback
 GET /api/v2/spot/account/assets       <- Spot balance
 ```
 
-### MEXC
+Sync notes:
+- Futures fill history co the thieu `pnl` o nhieu ban ghi.
+- Can fallback sang `history-position` khi fill history khong co realized pnl de dam bao PNL chart/calendar khong rong.
+- Fallback records nen duoc normalize thanh event futures co `quantity=0`, `price=0`, va `realized_pnl` khong null.
 
-Base URL: `https://api.mexc.com`
+### Gate.io
 
-Authentication: HMAC-SHA256 (similar to Binance)
-- Query param: `signature`
-- Header: `X-MEXC-APIKEY`
+Base URL: `https://api.gateio.ws/api/v4`
+
+Authentication: HMAC-SHA512
+- Headers: `KEY`, `Timestamp`, `SIGN`
+- Payload ky:
+  - `METHOD + '\n' + '/api/v4' + requestPath + '\n' + queryString + '\n' + SHA512(body) + '\n' + timestamp`
+- Timestamp dung Unix giay
 
 Key endpoints:
 ```
-GET /api/v3/myTrades      <- Spot trade history
-GET /api/v3/account       <- Account balance
-GET /api/v3/ping          <- Connectivity test
+GET /spot/my_trades                         <- Spot trade history
+GET /futures/{settle}/my_trades_timerange  <- Futures fill history
+GET /futures/{settle}/position_close        <- Futures closed pnl history
+GET /spot/accounts                          <- Spot balances
 ```
+
+Sync notes:
+- Nen chia window <= 30 ngay cho endpoint history de tranh timeout va de pagination on dinh.
+- Futures `position_close` la nguon chinh de lay `realized_pnl` cho dashboard calendar.
+- Merge spot fills + futures fills + position_close events, sau do deduplicate bang `symbol + external_trade_id`.
 
 ## Signature Generation
 
-All exchanges use HMAC-SHA256. Generic utility:
+Most exchanges use HMAC-SHA256, but Gate.io uses HMAC-SHA512.
+
+Generic utility for HMAC-SHA256 exchanges:
 
 ```typescript
 import { createHmac } from 'crypto'
@@ -163,6 +185,18 @@ function signRequest(secret: string, payload: string): string {
   return createHmac('sha256', secret)
     .update(payload)
     .digest('hex')
+}
+```
+
+Gate.io utility:
+
+```typescript
+import { createHash, createHmac } from 'crypto'
+
+function signGate(secret: string, method: string, requestPath: string, query: string, body: string, timestamp: string): string {
+  const bodyHash = createHash('sha512').update(body).digest('hex')
+  const payload = `${method.toUpperCase()}\n/api/v4${requestPath}\n${query}\n${bodyHash}\n${timestamp}`
+  return createHmac('sha512', secret).update(payload).digest('hex')
 }
 ```
 

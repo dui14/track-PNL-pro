@@ -95,7 +95,7 @@ Cards:
 
 - Recharts `PieChart` (donut):
   - Innerradius 60%, outerRadius 90%
-  - Màu per exchange: Binance `yellow-400`, OKX `blue-400`, Bybit `orange-400`, Bitget `cyan-400`, MEXC `purple-400`
+  - Màu per exchange: Binance `yellow-400`, OKX `blue-400`, Bybit `orange-400`, Bitget `cyan-400`, Gate.io `emerald-500`
   - Center text: "Total Trades" + count
   - Legend bên dưới: tên exchange + count + %
   - Hover: slice scale up nhẹ + tooltip

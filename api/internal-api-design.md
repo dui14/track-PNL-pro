@@ -96,7 +96,7 @@ Service role bypasses RLS. Use only in trusted server contexts (Edge Functions, 
 import { z } from 'zod'
 
 const ConnectExchangeSchema = z.object({
-  exchange: z.enum(['binance', 'okx', 'bybit', 'bitget', 'mexc']),
+  exchange: z.enum(['binance', 'okx', 'bybit', 'bitget', 'gateio']),
   apiKey: z.string().min(10).max(200),
   apiSecret: z.string().min(10).max(200),
   label: z.string().max(50).optional()

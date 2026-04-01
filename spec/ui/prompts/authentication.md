@@ -92,7 +92,7 @@ Step 1 — Welcome:
 
 Step 2 — Connect Exchange:
 - Heading: "Connect your first exchange"
-- Grid 5 exchange cards (Binance, OKX, Bybit, Bitget, MEXC) — logo + name, click để kết nối
+- Grid 5 exchange cards (Binance, OKX, Bybit, Bitget, Gate.io) — logo + name, click để kết nối
 - Nếu click → mở Connect Exchange modal inline
 - Button "Skip for now" (text variant) + "Continue →" (emerald, disabled nếu chưa kết nối, hoặc enabled với skip logic)
 

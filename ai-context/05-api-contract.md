@@ -62,7 +62,7 @@ Response:
 ```
 
 Validation:
-- `exchange` must be one of: binance, okx, bybit, bitget, mexc
+- `exchange` must be one of: binance, okx, bybit, bitget, gateio
 - `apiKey` and `apiSecret` must be non-empty strings
 - Verify API key is valid by calling exchange's test endpoint before saving
 - Keys are encrypted before storage; plain text is never persisted
@@ -222,12 +222,18 @@ Request:
   "symbol": "BTCUSDT",
   "side": "buy",
   "orderType": "market",
-  "quantity": 0.01,
-  "price": null
+  "quantity": null,
+  "price": null,
+  "marketPrice": 65000,
+  "marginMode": "isolated",
+  "leverage": 10,
+  "initialMargin": 100,
+  "takeProfit": 68000,
+  "stopLoss": 63000
 }
 ```
 
-For limit orders, `price` is required.
+For limit orders, `price` is required. For market orders, `marketPrice` is required. Quantity is derived by backend with formula: `positionNotional = initialMargin * leverage`, `quantity = positionNotional / entryPrice`.
 
 Response:
 ```json
@@ -237,8 +243,16 @@ Response:
     "id": "uuid",
     "symbol": "BTCUSDT",
     "side": "buy",
-    "quantity": 0.01,
+    "order_type": "market",
+    "margin_mode": "isolated",
+    "leverage": 10,
+    "quantity": 0.0153846154,
     "entry_price": 65000,
+    "initial_margin": 100,
+    "position_notional": 1000,
+    "take_profit": 68000,
+    "stop_loss": 63000,
+    "market_price_at_open": 65000,
     "status": "open",
     "opened_at": "2026-03-07T10:00:00Z"
   },
@@ -246,13 +260,14 @@ Response:
 }
 ```
 
-### POST /api/demo/order/:id/close
+### PATCH /api/demo/order
 
 Close an open demo order at current market price.
 
 Request:
 ```json
 {
+  "tradeId": "uuid",
   "exitPrice": 66000
 }
 ```

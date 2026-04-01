@@ -94,7 +94,7 @@ async function encryptApiKey(
 | OKX | `GET /api/v5/account/config` | `acctLv`, check privilege flags |
 | Bybit | `GET /v5/user/query-api` | `queryInverseOrderBook` vs `withdraw` permissions |
 | Bitget | `GET /api/v2/user/virtual-subaccount` | Check permission list |
-| MEXC | `GET /api/v3/account` | Check `permissions` |
+| Gate.io | `GET /api/v4/spot/accounts` | Validate key scope + deny withdraw keys |
 
 **Safeguard Logic:**
 ```typescript
@@ -179,7 +179,7 @@ Client → Next.js API Route → Supabase Edge Function → Exchange API
 | OKX | 20 req/2s | 10 req/2s |
 | Bybit | 120 req/s | 60 req/s |
 | Bitget | 20 req/s | 10 req/s |
-| MEXC | 500 req/s | 250 req/s |
+| Gate.io | 900 req/min | 450 req/min |
 
 **Rate Limiter Implementation:**
 ```typescript

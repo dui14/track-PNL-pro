@@ -34,7 +34,7 @@
 | OKX API | Trade history, balance | REST |
 | Bybit API | Trade history, balance | REST |
 | Bitget API | Trade history, balance | REST |
-| MEXC API | Trade history, balance | REST |
+| Gate.io API | Trade history, balance | REST |
 | LLM API | AI assistant responses | REST (streaming SSE) |
 | TradingView | Chart widget | Embed (iframe) |
 | Binance WS | Real-time price stream | WebSocket |

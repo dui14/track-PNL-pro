@@ -26,7 +26,7 @@ Purpose: Aggregate and visualize trading performance across exchanges.
 
 Features:
 - Connect exchange accounts using read-only API keys
-- Supported exchanges: Binance, OKX, Bybit, Bitget, MEXC
+- Supported exchanges: Binance, OKX, Bybit, Bitget, Gate.io
 - Fetch closed trade history via exchange REST APIs
 - Calculate realized PNL per trade and aggregated over time
 - Display:

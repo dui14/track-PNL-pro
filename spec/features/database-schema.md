@@ -69,7 +69,7 @@ COMMENT ON COLUMN public.users.onboarding_completed IS 'True after user complete
 CREATE TABLE public.exchange_accounts (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id     UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  exchange    TEXT NOT NULL CHECK (exchange IN ('binance','okx','bybit','bitget','mexc')),
+  exchange    TEXT NOT NULL CHECK (exchange IN ('binance','okx','bybit','bitget','gateio')),
   label       TEXT,
   is_active   BOOLEAN NOT NULL DEFAULT TRUE,
   sync_status TEXT NOT NULL DEFAULT 'pending' 

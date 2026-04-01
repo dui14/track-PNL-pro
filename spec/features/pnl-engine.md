@@ -57,7 +57,7 @@ Binance Spot  ──┐
 OKX Trades    ──┼──→ NormalizerAdapter ──→ NormalizedTrade ──→ PNL Engine
 Bybit Fills   ──┤
 Bitget Orders ──┤
-MEXC Trades   ──┘
+Gate.io Trades ──┘
 ```
 
 **Binance Spot format:**
@@ -72,7 +72,7 @@ MEXC Trades   ──┘
 **Bitget format:**
 - `tradeId`, `symbol`, `side`, `size`, `priceAvg`, `fee`, `profit`, `cTime`
 
-**MEXC format:**
+**Gate.io format:**
 - `id`, `symbol`, `side`, `qty`, `price`, `commission`, `commissionAsset`, `time`
 
 ### FR-PNL-003: Aggregation và Snapshots
