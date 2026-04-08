@@ -314,20 +314,84 @@ export function AIChatInterface({
 
     const turnStartedAt = Date.now()
     let stepIndex = 0
+    let contentRafId: number | null = null
+    let queuedAssistantContent: string | null = null
 
     const makeStepId = (prefix: string): string => {
       stepIndex += 1
       return `${prefix}-${turnStartedAt}-${stepIndex}`
     }
 
+    const setThinkingPanelCollapsed = (collapsed: boolean): void => {
+      setCollapsedByMessageId((prev) => {
+        if (prev[tempAssistantMsg.id] === collapsed) {
+          return prev
+        }
+
+        return {
+          ...prev,
+          [tempAssistantMsg.id]: collapsed,
+        }
+      })
+    }
+
+    const patchTempAssistantMessage = (nextContent: string): void => {
+      setMessages((prev) => {
+        const index = prev.findIndex((message) => message.id === tempAssistantMsg.id)
+        if (index < 0) {
+          return prev
+        }
+
+        const currentMessage = prev[index]
+        if (currentMessage.content === nextContent) {
+          return prev
+        }
+
+        const next = [...prev]
+        next[index] = {
+          ...currentMessage,
+          content: nextContent,
+        }
+
+        return next
+      })
+    }
+
+    const flushQueuedAssistantContent = (): void => {
+      if (queuedAssistantContent === null) {
+        return
+      }
+
+      const nextContent = queuedAssistantContent
+      queuedAssistantContent = null
+      patchTempAssistantMessage(nextContent)
+    }
+
+    const scheduleAssistantContentFlush = (): void => {
+      if (contentRafId !== null) {
+        return
+      }
+
+      contentRafId = window.requestAnimationFrame(() => {
+        contentRafId = null
+        flushQueuedAssistantContent()
+      })
+    }
+
+    const stopAssistantContentFlush = (): void => {
+      if (contentRafId !== null) {
+        window.cancelAnimationFrame(contentRafId)
+        contentRafId = null
+      }
+
+      flushQueuedAssistantContent()
+    }
+
     setThinkingMessageId(tempAssistantMsg.id)
     setThinkingSteps([])
     setIsThinking(true)
     setElapsedTime(0)
-    setCollapsedByMessageId((prev) => ({
-      ...prev,
-      [tempAssistantMsg.id]: false,
-    }))
+    setThinkingPanelCollapsed(false)
     thinkingStartedAtRef.current = turnStartedAt
 
     try {
@@ -381,10 +445,7 @@ export function AIChatInterface({
           if (payloadText === '[DONE]') {
             doneReceived = true
             setIsThinking(false)
-            setCollapsedByMessageId((prev) => ({
-              ...prev,
-              [tempAssistantMsg.id]: true,
-            }))
+            setThinkingPanelCollapsed(true)
             setElapsedTime(getElapsedSeconds(turnStartedAt))
             thinkingStartedAtRef.current = null
             continue
@@ -510,20 +571,14 @@ export function AIChatInterface({
 
             if (contentPart) {
               fullContent += contentPart
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === tempAssistantMsg.id ? { ...m, content: fullContent } : m
-                )
-              )
+              queuedAssistantContent = fullContent
+              scheduleAssistantContentFlush()
             }
 
             if (event.type === 'done') {
               doneReceived = true
               setIsThinking(false)
-              setCollapsedByMessageId((prev) => ({
-                ...prev,
-                [tempAssistantMsg.id]: true,
-              }))
+              setThinkingPanelCollapsed(true)
               setElapsedTime(getElapsedSeconds(turnStartedAt))
               thinkingStartedAtRef.current = null
             }
@@ -531,16 +586,14 @@ export function AIChatInterface({
         }
       }
 
+      stopAssistantContentFlush()
+
       if (!doneReceived && !streamError && fullContent.length === 0) {
         streamError = 'STREAM_TERMINATED'
       }
 
       if (streamError && fullContent.length === 0) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === tempAssistantMsg.id ? { ...m, content: `Error: ${streamError}` } : m
-          )
-        )
+        patchTempAssistantMessage(`Error: ${streamError}`)
       }
 
       if (newConvId) {
@@ -553,12 +606,10 @@ export function AIChatInterface({
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'INTERNAL_ERROR'
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === tempAssistantMsg.id ? { ...m, content: `Error: ${message}` } : m
-        )
-      )
+      stopAssistantContentFlush()
+      patchTempAssistantMessage(`Error: ${message}`)
     } finally {
+      stopAssistantContentFlush()
       setIsThinking(false)
       setElapsedTime((prev) => (prev > 0 ? prev : getElapsedSeconds(turnStartedAt)))
       thinkingStartedAtRef.current = null
