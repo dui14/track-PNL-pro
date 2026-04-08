@@ -65,23 +65,23 @@ CREATE TABLE IF NOT EXISTS trades (
   UNIQUE (exchange_account_id, external_trade_id)
 );
 
-CREATE TABLE IF NOT EXISTS pnl_snapshots (
-  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  exchange_account_id UUID REFERENCES exchange_accounts(id) ON DELETE CASCADE,
-  period_type         TEXT NOT NULL CHECK (period_type IN ('day','week','month','year','all')),
-  period_start        DATE NOT NULL,
-  period_end          DATE NOT NULL,
-  total_pnl           NUMERIC(28,10) NOT NULL DEFAULT 0,
-  win_count           INT NOT NULL DEFAULT 0,
-  loss_count          INT NOT NULL DEFAULT 0,
-  trade_count         INT NOT NULL DEFAULT 0,
-  win_rate            NUMERIC(5,2),
-  best_trade_pnl      NUMERIC(28,10),
-  worst_trade_pnl     NUMERIC(28,10),
-  calculated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (user_id, exchange_account_id, period_type, period_start)
-);
+-- CREATE TABLE IF NOT EXISTS pnl_snapshots (
+--   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+--   exchange_account_id UUID REFERENCES exchange_accounts(id) ON DELETE CASCADE,
+--   period_type         TEXT NOT NULL CHECK (period_type IN ('day','week','month','year','all')),
+--   period_start        DATE NOT NULL,
+--   period_end          DATE NOT NULL,
+--   total_pnl           NUMERIC(28,10) NOT NULL DEFAULT 0,
+--   win_count           INT NOT NULL DEFAULT 0,
+--   loss_count          INT NOT NULL DEFAULT 0,
+--   trade_count         INT NOT NULL DEFAULT 0,
+--   win_rate            NUMERIC(5,2),
+--   best_trade_pnl      NUMERIC(28,10),
+--   worst_trade_pnl     NUMERIC(28,10),
+--   calculated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+--   UNIQUE (user_id, exchange_account_id, period_type, period_start)
+-- );
 
 CREATE TABLE IF NOT EXISTS demo_trades (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -132,7 +132,7 @@ CREATE INDEX IF NOT EXISTS idx_trades_user_id ON trades(user_id);
 CREATE INDEX IF NOT EXISTS idx_trades_exchange_account_id ON trades(exchange_account_id);
 CREATE INDEX IF NOT EXISTS idx_trades_traded_at ON trades(traded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
-CREATE INDEX IF NOT EXISTS idx_pnl_snapshots_user_period ON pnl_snapshots(user_id, period_type, period_start);
+-- CREATE INDEX IF NOT EXISTS idx_pnl_snapshots_user_period ON pnl_snapshots(user_id, period_type, period_start);
 CREATE INDEX IF NOT EXISTS idx_demo_trades_user_id ON demo_trades(user_id);
 CREATE INDEX IF NOT EXISTS idx_demo_trades_status ON demo_trades(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(conversation_id, created_at);
@@ -146,7 +146,7 @@ ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE exchange_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trades ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pnl_snapshots ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE pnl_snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE demo_trades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
@@ -163,8 +163,8 @@ CREATE POLICY "no_direct_key_access" ON api_keys
 CREATE POLICY "users_own_trades" ON trades
   FOR ALL USING (auth.uid() = user_id);
 
-CREATE POLICY "users_own_pnl" ON pnl_snapshots
-  FOR ALL USING (auth.uid() = user_id);
+-- CREATE POLICY "users_own_pnl" ON pnl_snapshots
+--   FOR ALL USING (auth.uid() = user_id);
 
 CREATE POLICY "users_own_demo_trades" ON demo_trades
   FOR ALL USING (auth.uid() = user_id);
