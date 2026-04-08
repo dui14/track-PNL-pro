@@ -1,0 +1,77 @@
+<svg width="100%" viewBox="0 0 900 620" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      text { font-family: "Segoe UI", Arial, sans-serif; fill: #1d1d1b; }
+      .title { font-size: 24px; font-weight: 700; }
+      .h { font-size: 16px; font-weight: 700; }
+      .s { font-size: 12px; font-weight: 500; }
+      .layer-a rect { fill: #f0f5ff; stroke: #294d93; }
+      .layer-b rect { fill: #eefaf4; stroke: #1f6b47; }
+      .layer-c rect { fill: #fff7e8; stroke: #8a5a11; }
+      .layer-d rect { fill: #f8eefc; stroke: #5d2f8e; }
+      .ext rect { fill: #f6f6f3; stroke: #66655f; }
+      .arr { stroke: #6d6b63; stroke-width: 1.6; fill: none; }
+      .hint { font-size: 11px; fill: #5c5b56; }
+    </style>
+  </defs>
+
+  <text class="title" x="450" y="42" text-anchor="middle">System Layer Flow</text>
+
+  <g class="layer-a">
+    <rect x="120" y="70" width="660" height="82" rx="12" stroke-width="1.2"/>
+    <text class="h" x="450" y="98" text-anchor="middle">Presentation Layer</text>
+    <text class="s" x="450" y="123" text-anchor="middle">Next.js App Router, UI Components, Middleware Gate</text>
+  </g>
+
+  <g class="layer-b">
+    <rect x="120" y="172" width="660" height="82" rx="12" stroke-width="1.2"/>
+    <text class="h" x="450" y="200" text-anchor="middle">Application Layer</text>
+    <text class="s" x="450" y="225" text-anchor="middle">API Routes, Server Actions, Supabase JWT Validation, Zod Input Validation</text>
+  </g>
+
+  <g class="layer-c">
+    <rect x="120" y="274" width="660" height="82" rx="12" stroke-width="1.2"/>
+    <text class="h" x="450" y="302" text-anchor="middle">Domain Layer</text>
+    <text class="s" x="450" y="327" text-anchor="middle">PNL Engine, Demo Engine, Exchange Service, AI Service</text>
+  </g>
+
+  <g class="layer-d">
+    <rect x="120" y="376" width="660" height="82" rx="12" stroke-width="1.2"/>
+    <text class="h" x="450" y="404" text-anchor="middle">Infrastructure Layer</text>
+    <text class="s" x="450" y="429" text-anchor="middle">Supabase DB, Auth, Storage, Exchange Adapters, LLM Client, Encryption</text>
+  </g>
+
+  <g class="ext">
+    <rect x="120" y="500" width="200" height="66" rx="10" stroke-width="1.1"/>
+    <text class="h" x="220" y="527" text-anchor="middle">Supabase Cloud</text>
+    <text class="s" x="220" y="548" text-anchor="middle">Postgres, Auth, Storage</text>
+  </g>
+
+  <g class="ext">
+    <rect x="350" y="500" width="200" height="66" rx="10" stroke-width="1.1"/>
+    <text class="h" x="450" y="527" text-anchor="middle">Exchange APIs</text>
+    <text class="s" x="450" y="548" text-anchor="middle">Binance, OKX, Bybit, Bitget</text>
+  </g>
+
+  <g class="ext">
+    <rect x="580" y="500" width="200" height="66" rx="10" stroke-width="1.1"/>
+    <text class="h" x="680" y="527" text-anchor="middle">LLM Provider</text>
+    <text class="s" x="680" y="548" text-anchor="middle">Streaming SSE Response</text>
+  </g>
+
+  <line x1="450" y1="152" x2="450" y2="172" class="arr" marker-end="url(#arrow)"/>
+  <line x1="450" y1="254" x2="450" y2="274" class="arr" marker-end="url(#arrow)"/>
+  <line x1="450" y1="356" x2="450" y2="376" class="arr" marker-end="url(#arrow)"/>
+
+  <line x1="220" y1="500" x2="220" y2="458" class="arr" marker-end="url(#arrow)"/>
+  <line x1="450" y1="500" x2="450" y2="458" class="arr" marker-end="url(#arrow)"/>
+  <line x1="680" y1="500" x2="680" y2="458" class="arr" marker-end="url(#arrow)"/>
+
+  <line x1="110" y1="417" x2="72" y2="417" class="arr" marker-end="url(#arrow)"/>
+  <line x1="72" y1="417" x2="72" y2="111" class="arr" marker-end="url(#arrow)"/>
+  <line x1="72" y1="111" x2="110" y2="111" class="arr" marker-end="url(#arrow)"/>
+  <text class="hint" x="22" y="263" transform="rotate(-90 22 263)">request down / response up</text>
+</svg>

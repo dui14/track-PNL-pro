@@ -1,0 +1,92 @@
+<svg width="100%" viewBox="0 0 980 640" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      text { font-family: "Segoe UI", Arial, sans-serif; fill: #1d1d1b; }
+      .title { font-size: 24px; font-weight: 700; }
+      .actor { font-size: 14px; font-weight: 700; }
+      .h { font-size: 14px; font-weight: 700; }
+      .s { font-size: 12px; font-weight: 500; }
+      .uc rect { fill: #eef5ff; stroke: #2f5496; }
+      .api rect { fill: #eefaf4; stroke: #23724a; }
+      .arr { stroke: #65645d; stroke-width: 1.5; fill: none; }
+      .frame { fill: #fbfaf7; stroke: #8c8a81; }
+    </style>
+  </defs>
+
+  <text class="title" x="490" y="42" text-anchor="middle">Use Case Flow Map</text>
+
+  <rect x="140" y="90" width="700" height="500" rx="14" class="frame" stroke-width="1.2"/>
+  <text class="h" x="490" y="120" text-anchor="middle">aiTrackProfit Core Use Cases</text>
+
+  <circle cx="80" cy="290" r="28" fill="#f4efe7" stroke="#7a756d" stroke-width="1.2"/>
+  <line x1="80" y1="318" x2="80" y2="370" stroke="#7a756d" stroke-width="1.2"/>
+  <line x1="56" y1="340" x2="104" y2="340" stroke="#7a756d" stroke-width="1.2"/>
+  <line x1="80" y1="370" x2="56" y2="408" stroke="#7a756d" stroke-width="1.2"/>
+  <line x1="80" y1="370" x2="104" y2="408" stroke="#7a756d" stroke-width="1.2"/>
+  <text class="actor" x="80" y="432" text-anchor="middle">Trader</text>
+
+  <g class="uc">
+    <rect x="190" y="150" width="260" height="70" rx="10" stroke-width="1.1"/>
+    <text class="h" x="320" y="177" text-anchor="middle">Connect Exchange</text>
+    <text class="s" x="320" y="200" text-anchor="middle">Save encrypted API key set</text>
+  </g>
+
+  <g class="uc">
+    <rect x="190" y="240" width="260" height="70" rx="10" stroke-width="1.1"/>
+    <text class="h" x="320" y="267" text-anchor="middle">Sync Trade History</text>
+    <text class="s" x="320" y="290" text-anchor="middle">Normalize trades and refresh PNL</text>
+  </g>
+
+  <g class="uc">
+    <rect x="190" y="330" width="260" height="70" rx="10" stroke-width="1.1"/>
+    <text class="h" x="320" y="357" text-anchor="middle">View Dashboard</text>
+    <text class="s" x="320" y="380" text-anchor="middle">Summary, chart, calendar, trade list</text>
+  </g>
+
+  <g class="uc">
+    <rect x="190" y="420" width="260" height="70" rx="10" stroke-width="1.1"/>
+    <text class="h" x="320" y="447" text-anchor="middle">Demo Trading</text>
+    <text class="s" x="320" y="470" text-anchor="middle">Open and close paper positions</text>
+  </g>
+
+  <g class="uc">
+    <rect x="190" y="510" width="260" height="60" rx="10" stroke-width="1.1"/>
+    <text class="h" x="320" y="547" text-anchor="middle">Ask AI</text>
+  </g>
+
+  <g class="api">
+    <rect x="520" y="180" width="280" height="80" rx="10" stroke-width="1.1"/>
+    <text class="h" x="660" y="210" text-anchor="middle">API Routes</text>
+    <text class="s" x="660" y="233" text-anchor="middle">JWT check, Zod validation, envelope response</text>
+  </g>
+
+  <g class="api">
+    <rect x="520" y="290" width="280" height="80" rx="10" stroke-width="1.1"/>
+    <text class="h" x="660" y="320" text-anchor="middle">Domain Services</text>
+    <text class="s" x="660" y="343" text-anchor="middle">PNL engine, demo engine, exchange, AI orchestration</text>
+  </g>
+
+  <g class="api">
+    <rect x="520" y="400" width="280" height="80" rx="10" stroke-width="1.1"/>
+    <text class="h" x="660" y="430" text-anchor="middle">Infrastructure</text>
+    <text class="s" x="660" y="453" text-anchor="middle">Supabase, Storage, Exchange APIs, LLM APIs</text>
+  </g>
+
+  <line x1="108" y1="260" x2="190" y2="185" class="arr" marker-end="url(#arrow)"/>
+  <line x1="108" y1="280" x2="190" y2="275" class="arr" marker-end="url(#arrow)"/>
+  <line x1="108" y1="300" x2="190" y2="365" class="arr" marker-end="url(#arrow)"/>
+  <line x1="108" y1="320" x2="190" y2="455" class="arr" marker-end="url(#arrow)"/>
+  <line x1="108" y1="340" x2="190" y2="540" class="arr" marker-end="url(#arrow)"/>
+
+  <line x1="450" y1="185" x2="520" y2="220" class="arr" marker-end="url(#arrow)"/>
+  <line x1="450" y1="275" x2="520" y2="220" class="arr" marker-end="url(#arrow)"/>
+  <line x1="450" y1="365" x2="520" y2="330" class="arr" marker-end="url(#arrow)"/>
+  <line x1="450" y1="455" x2="520" y2="330" class="arr" marker-end="url(#arrow)"/>
+  <line x1="450" y1="540" x2="520" y2="330" class="arr" marker-end="url(#arrow)"/>
+
+  <line x1="660" y1="260" x2="660" y2="290" class="arr" marker-end="url(#arrow)"/>
+  <line x1="660" y1="370" x2="660" y2="400" class="arr" marker-end="url(#arrow)"/>
+</svg>
