@@ -31,6 +31,26 @@ function hasMissingColumnError(error: unknown, column: string): boolean {
   return message.includes(column) && (lowerMessage.includes('column') || lowerMessage.includes('schema cache'))
 }
 
+function hasMissingTableError(error: unknown, table: string): boolean {
+  if (!error || typeof error !== 'object') return false
+
+  const code = 'code' in error ? String(error.code ?? '') : ''
+  if (code === '42P01' || code === 'PGRST205') return true
+
+  const message = 'message' in error ? String(error.message ?? '').toLowerCase() : ''
+  const hint = 'hint' in error ? String(error.hint ?? '').toLowerCase() : ''
+  const tableName = table.toLowerCase()
+
+  const referencesTable = message.includes(tableName) || hint.includes(tableName)
+  const missingSignal =
+    message.includes('does not exist') ||
+    message.includes('not found') ||
+    hint.includes('does not exist') ||
+    hint.includes('not found')
+
+  return referencesTable && missingSignal
+}
+
 export async function upsertTrades(
   supabase: SupabaseClient,
   exchangeAccountId: string,
@@ -380,7 +400,7 @@ export async function deleteExchangeTrackingData(
     .eq('user_id', userId)
     .eq('exchange_account_id', exchangeAccountId)
 
-  if (deleteSnapshotsResult.error) {
+  if (deleteSnapshotsResult.error && !hasMissingTableError(deleteSnapshotsResult.error, 'pnl_snapshots')) {
     console.error('[tradesDb] deleteExchangeTrackingData(pnl_snapshots) failed:', deleteSnapshotsResult.error.message)
     return false
   }

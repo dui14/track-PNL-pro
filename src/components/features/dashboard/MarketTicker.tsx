@@ -7,7 +7,7 @@ type TickerData = {
   label: string
   price: string
   change: string
-  changePositive: boolean
+  changePositive: boolean | null
 }
 
 const TRACKED_PAIRS: { symbol: string; label: string }[] = [
@@ -17,17 +17,39 @@ const TRACKED_PAIRS: { symbol: string; label: string }[] = [
   { symbol: 'bnbusdt', label: 'BNB' },
 ]
 
-type BinanceMiniTicker = {
+type BinanceTicker = {
   s: string
   c: string
-  P: string
+  P?: string
+  o?: string
+}
+
+type BinanceStreamEvent = {
+  data?: BinanceTicker
 }
 
 function formatPrice(price: string): string {
   const num = parseFloat(price)
+  if (!Number.isFinite(num)) return '--'
   if (num >= 1000) return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   if (num >= 1) return num.toFixed(3)
   return num.toFixed(5)
+}
+
+function resolveChangePercent(tick: BinanceTicker): number | null {
+  const payloadPercent = Number.parseFloat(tick.P ?? '')
+  if (Number.isFinite(payloadPercent)) {
+    return payloadPercent
+  }
+
+  const open = Number.parseFloat(tick.o ?? '')
+  const close = Number.parseFloat(tick.c)
+
+  if (Number.isFinite(open) && open > 0 && Number.isFinite(close)) {
+    return ((close - open) / open) * 100
+  }
+
+  return null
 }
 
 export function MarketTicker(): React.JSX.Element {
@@ -36,35 +58,40 @@ export function MarketTicker(): React.JSX.Element {
       new Map(
         TRACKED_PAIRS.map((p) => [
           p.symbol,
-          { symbol: p.symbol, label: p.label, price: '--', change: '0.00', changePositive: true },
+          { symbol: p.symbol, label: p.label, price: '--', change: '--', changePositive: null },
         ])
       )
   )
   const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
-    const streams = TRACKED_PAIRS.map((p) => `${p.symbol}@miniTicker`).join('/')
+    const streams = TRACKED_PAIRS.map((p) => `${p.symbol}@ticker`).join('/')
     const url = `wss://stream.binance.com:9443/stream?streams=${streams}`
     const ws = new WebSocket(url)
     wsRef.current = ws
 
     ws.onmessage = (event: MessageEvent<string>) => {
       try {
-        const msg = JSON.parse(event.data) as { data: BinanceMiniTicker }
+        const msg = JSON.parse(event.data) as BinanceStreamEvent
         const tick = msg.data
+        if (!tick?.s || typeof tick.c !== 'string') return
+
         const symbolLower = tick.s.toLowerCase()
         const pair = TRACKED_PAIRS.find((p) => p.symbol === symbolLower)
         if (!pair) return
 
-        const changeVal = parseFloat(tick.P)
+        const changeVal = resolveChangePercent(tick)
         setTickers((prev) => {
           const next = new Map(prev)
+          const formattedChange =
+            changeVal === null ? '--' : `${changeVal >= 0 ? '+' : ''}${changeVal.toFixed(2)}%`
+
           next.set(symbolLower, {
             symbol: symbolLower,
             label: pair.label,
             price: formatPrice(tick.c),
-            change: `${changeVal >= 0 ? '+' : ''}${changeVal.toFixed(2)}%`,
-            changePositive: changeVal >= 0,
+            change: formattedChange,
+            changePositive: changeVal === null ? null : changeVal >= 0,
           })
           return next
         })
@@ -89,7 +116,7 @@ export function MarketTicker(): React.JSX.Element {
           <div className="text-sm font-bold tabular-nums">${t.price}</div>
           <div
             className={`text-xs font-semibold mt-0.5 tabular-nums ${
-              t.changePositive ? 'text-green-500' : 'text-red-500'
+              t.changePositive === null ? 'text-slate-500 dark:text-slate-400' : t.changePositive ? 'text-green-500' : 'text-red-500'
             }`}
           >
             {t.change}
