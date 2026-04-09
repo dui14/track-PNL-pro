@@ -38,8 +38,31 @@ const SYMBOL_ALIAS: Record<string, string> = {
   DXY: 'DX-Y.NYB',
   USOIL: 'CL=F',
   BTC: 'BTC-USD',
+  BTCUSDT: 'BTC-USD',
+  BTCUSD: 'BTC-USD',
+  BITCOIN: 'BTC-USD',
   ETH: 'ETH-USD',
+  ETHUSDT: 'ETH-USD',
+  ETHUSD: 'ETH-USD',
+  ETHEREUM: 'ETH-USD',
+  SOL: 'SOL-USD',
+  SOLUSDT: 'SOL-USD',
 }
+
+const SYMBOL_QUERY_STOPWORDS = new Set<string>([
+  'PRICE',
+  'NEWS',
+  'TODAY',
+  'MARKET',
+  'ACTION',
+  'ANALYSIS',
+  'ONCHAIN',
+  'ON-CHAIN',
+  'STRATEGY',
+  'TRADING',
+  'USDT',
+  'USD',
+])
 
 const STOOQ_SYMBOL_ALIAS: Record<string, string> = {
   'XAUUSD=X': 'XAUUSD',
@@ -55,7 +78,17 @@ const STOOQ_SYMBOL_ALIAS: Record<string, string> = {
 function normalizeSymbol(raw: string): string {
   const upper = raw.toUpperCase().trim()
   if (!upper) return ''
-  return SYMBOL_ALIAS[upper] ?? upper
+
+  const compact = upper.replace(/\//g, '')
+  if (SYMBOL_ALIAS[upper]) {
+    return SYMBOL_ALIAS[upper]
+  }
+
+  if (SYMBOL_ALIAS[compact]) {
+    return SYMBOL_ALIAS[compact]
+  }
+
+  return compact
 }
 
 function parseSymbolsFromInput(input: string): string[] {
@@ -66,6 +99,11 @@ function parseSymbolsFromInput(input: string): string[] {
 
   const unique = new Set<string>()
   for (const token of tokens) {
+    const upperToken = token.toUpperCase().trim()
+    if (SYMBOL_QUERY_STOPWORDS.has(upperToken)) {
+      continue
+    }
+
     const normalized = normalizeSymbol(token)
     if (normalized) {
       unique.add(normalized)
@@ -87,6 +125,10 @@ function extractSymbols(query: string): string[] {
 
   const directMatches = upper.match(/[A-Z^]{2,12}(?:[-=][A-Z0-9.]{1,10})?/g) ?? []
   for (const token of directMatches) {
+    if (SYMBOL_QUERY_STOPWORDS.has(token)) {
+      continue
+    }
+
     const normalized = normalizeSymbol(token)
     if (normalized) {
       extracted.add(normalized)
@@ -94,6 +136,25 @@ function extractSymbols(query: string): string[] {
   }
 
   return Array.from(extracted).slice(0, 10)
+}
+
+function inferSymbolsFromQueryHints(query: string): string[] {
+  const upper = query.toUpperCase()
+  const output = new Set<string>()
+
+  if (upper.includes('BITCOIN') || upper.includes(' BTC ')) {
+    output.add('BTC-USD')
+  }
+
+  if (upper.includes('ETHEREUM') || upper.includes(' ETH ')) {
+    output.add('ETH-USD')
+  }
+
+  if (upper.includes('SOLANA') || upper.includes(' SOL ')) {
+    output.add('SOL-USD')
+  }
+
+  return Array.from(output).slice(0, 10)
 }
 
 function pickRequestedSymbols(args: GetMarketQuotesArgs): string[] {
@@ -107,7 +168,12 @@ function pickRequestedSymbols(args: GetMarketQuotesArgs): string[] {
     return []
   }
 
-  return extractSymbols(query)
+  const extracted = extractSymbols(query)
+  if (extracted.length > 0) {
+    return extracted
+  }
+
+  return inferSymbolsFromQueryHints(query)
 }
 
 function asNumber(value: unknown): number | null {

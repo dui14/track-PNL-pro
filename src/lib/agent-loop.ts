@@ -290,7 +290,20 @@ function buildToolDoneSummary(
 
   const count = Math.max(0, Math.trunc(readNumber(result, 'count') ?? 0))
   const query = asOptionalString(rawArgs.query) ?? readString(result, 'query') ?? 'crypto'
-  return `Tim duoc ${count} bai lien quan den ${query}`
+  const rawSources = result.sources
+  let sourceStats = ''
+
+  if (rawSources && typeof rawSources === 'object' && !Array.isArray(rawSources)) {
+    const sourceRecord = rawSources as Record<string, unknown>
+    const succeeded = readNumber(sourceRecord, 'succeeded')
+    const total = readNumber(sourceRecord, 'total')
+
+    if (succeeded !== null && total !== null) {
+      sourceStats = ` (${Math.max(0, Math.trunc(succeeded))}/${Math.max(0, Math.trunc(total))} nguon RSS)`
+    }
+  }
+
+  return `Tim duoc ${count} bai lien quan den ${query}${sourceStats}`
 }
 
 function buildNewsToolLinks(result: Record<string, unknown>): AgentReferenceLink[] {

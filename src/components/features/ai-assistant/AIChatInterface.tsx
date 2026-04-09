@@ -314,8 +314,9 @@ export function AIChatInterface({
 
     const turnStartedAt = Date.now()
     let stepIndex = 0
-    let contentRafId: number | null = null
+    let contentFlushTimeoutId: number | null = null
     let queuedAssistantContent: string | null = null
+    let lastPatchedAssistantContent = ''
 
     const makeStepId = (prefix: string): string => {
       stepIndex += 1
@@ -336,6 +337,12 @@ export function AIChatInterface({
     }
 
     const patchTempAssistantMessage = (nextContent: string): void => {
+      if (nextContent === lastPatchedAssistantContent) {
+        return
+      }
+
+      lastPatchedAssistantContent = nextContent
+
       setMessages((prev) => {
         const index = prev.findIndex((message) => message.id === tempAssistantMsg.id)
         if (index < 0) {
@@ -368,20 +375,20 @@ export function AIChatInterface({
     }
 
     const scheduleAssistantContentFlush = (): void => {
-      if (contentRafId !== null) {
+      if (contentFlushTimeoutId !== null) {
         return
       }
 
-      contentRafId = window.requestAnimationFrame(() => {
-        contentRafId = null
+      contentFlushTimeoutId = window.setTimeout(() => {
+        contentFlushTimeoutId = null
         flushQueuedAssistantContent()
-      })
+      }, 16)
     }
 
     const stopAssistantContentFlush = (): void => {
-      if (contentRafId !== null) {
-        window.cancelAnimationFrame(contentRafId)
-        contentRafId = null
+      if (contentFlushTimeoutId !== null) {
+        window.clearTimeout(contentFlushTimeoutId)
+        contentFlushTimeoutId = null
       }
 
       flushQueuedAssistantContent()

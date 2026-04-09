@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 
 export default function AppLayout({
@@ -7,7 +8,9 @@ export default function AppLayout({
 }): React.JSX.Element {
   return (
     <div className="flex h-screen overflow-hidden bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
-      <AppSidebar />
+      <Suspense fallback={<div className="w-16 md:w-64 border-r border-slate-200 dark:border-primary/20" />}>
+        <AppSidebar />
+      </Suspense>
       <main className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-hidden">
           {children}
