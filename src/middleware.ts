@@ -25,61 +25,6 @@ const PROTECTED_ROUTES = [
 const PUBLIC_API_ROUTES = ['/api/exchange/debug/verify']
 
 const AUTH_ROUTES = ['/login', '/register']
-const DEFAULT_API_PROXY_TARGET_ORIGIN = 'https://api.duii.dev'
-
-function normalizeHost(rawHost: string): string {
-  const host = rawHost.trim().toLowerCase()
-
-  if (host.endsWith(':80')) {
-    return host.slice(0, -3)
-  }
-
-  if (host.endsWith(':443')) {
-    return host.slice(0, -4)
-  }
-
-  return host
-}
-
-function resolveApiProxyTargetOrigin(): URL | null {
-  const configuredTarget = process.env.API_PROXY_TARGET_ORIGIN?.trim()
-  const fallbackTarget =
-    process.env.VERCEL_ENV === 'production' ? DEFAULT_API_PROXY_TARGET_ORIGIN : ''
-  const target = configuredTarget && configuredTarget.length > 0 ? configuredTarget : fallbackTarget
-
-  if (!target) {
-    return null
-  }
-
-  try {
-    return new URL(target)
-  } catch (error) {
-    console.error('[middleware] invalid API_PROXY_TARGET_ORIGIN', error)
-    return null
-  }
-}
-
-function shouldProxyApiRequest(
-  request: NextRequest,
-  pathname: string,
-  targetOrigin: URL
-): boolean {
-  if (!pathname.startsWith('/api/')) {
-    return false
-  }
-
-  const forwardedHost = request.headers.get('x-forwarded-host')
-  const host = request.headers.get('host')
-  const requestHost = normalizeHost(forwardedHost ?? host ?? '')
-
-  if (!requestHost) {
-    return false
-  }
-
-  const targetHost = normalizeHost(targetOrigin.host)
-
-  return requestHost !== targetHost
-}
 
 function hasSupabaseAuthCookie(request: NextRequest): boolean {
   return request.cookies
@@ -108,15 +53,6 @@ async function getUserWithRetry(
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   let response = NextResponse.next({ request })
   const { pathname } = request.nextUrl
-  const apiProxyTargetOrigin = resolveApiProxyTargetOrigin()
-
-  if (apiProxyTargetOrigin && shouldProxyApiRequest(request, pathname, apiProxyTargetOrigin)) {
-    const rewrittenUrl = request.nextUrl.clone()
-    rewrittenUrl.protocol = apiProxyTargetOrigin.protocol
-    rewrittenUrl.host = apiProxyTargetOrigin.host
-    return NextResponse.rewrite(rewrittenUrl)
-  }
-
   const isPublicApiRoute = PUBLIC_API_ROUTES.some((route) => pathname.startsWith(route))
   const isProtected = PROTECTED_ROUTES.some((route) => pathname.startsWith(route))
   const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route))
