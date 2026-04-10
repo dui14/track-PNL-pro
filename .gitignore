@@ -35,7 +35,6 @@ supabase/.branches/
 supabase/.temp/
 
 .vscode
-.vercel
 
 # pnpm
 .pnpm-debug.log*
