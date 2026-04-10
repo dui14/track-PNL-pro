@@ -5,6 +5,7 @@ import type {
   UnrealizedPosition,
 } from '@/lib/types'
 import { buildOkxSignedHeaders } from '@/lib/adapters/okxApi'
+import { fetchExchange } from './httpClient'
 import type { ExchangeAdapter } from './exchangeFactory'
 
 const BASE_URL = 'https://www.okx.com'
@@ -17,7 +18,7 @@ async function fetchWithTimeout(url: string, options?: RequestInit): Promise<Res
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
   try {
-    return await fetch(url, { ...options, signal: controller.signal })
+    return await fetchExchange(url, { ...options, signal: controller.signal })
   } finally {
     clearTimeout(timer)
   }

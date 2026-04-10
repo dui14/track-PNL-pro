@@ -5,6 +5,7 @@ import type {
   AssetBalance,
   UnrealizedPosition,
 } from '@/lib/types'
+import { fetchExchange } from './httpClient'
 import type { ExchangeAdapter } from './exchangeFactory'
 
 const BASE_URL = 'https://api.binance.com'
@@ -40,7 +41,7 @@ async function fetchWithTimeout(url: string, options?: RequestInit): Promise<Res
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal })
+    const response = await fetchExchange(url, { ...options, signal: controller.signal })
     return response
   } finally {
     clearTimeout(timer)

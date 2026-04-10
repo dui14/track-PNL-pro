@@ -698,7 +698,7 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
         } else {
           const errorMessages: Record<string, string> = {
             CONFLICT: 'This exchange is already connected.',
-            INVALID_API_KEY: 'Invalid API key or secret. Please check your credentials.',
+            INVALID_API_KEY: 'Invalid API key/secret, or this server IP/region is blocked by the exchange.',
             PASSPHRASE_REQUIRED: 'Passphrase is required for this exchange.',
             WITHDRAW_PERMISSION_DETECTED: 'Please use read-only API keys without withdrawal permission.',
             UNSUPPORTED_EXCHANGE: 'This exchange is not supported.',

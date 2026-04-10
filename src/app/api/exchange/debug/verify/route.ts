@@ -361,6 +361,14 @@ async function verifyGateio(input: ExchangeDebugVerifyInput): Promise<DebugVerif
 
 function buildHints(exchange: string, result: DebugVerifyResult): string[] {
   const hints: string[] = []
+  if (exchange === 'binance' && result.upstreamStatus === 451) {
+    hints.push('Binance chan theo khu vuc IP server. Thu doi region Render hoac cau hinh EXCHANGE_PROXY_URL.')
+  }
+
+  if (exchange === 'bybit' && result.upstreamStatus === 403) {
+    hints.push('Bybit tu choi IP server. Kiem tra IP whitelist hoac su dung EXCHANGE_PROXY_URL.')
+  }
+
   if (result.upstreamStatus === 401 || result.upstreamStatus === 403) {
     hints.push('API key khong hop le, bi khoa, hoac bi chan boi IP whitelist.')
   }
