@@ -5,8 +5,26 @@ import type {
   UnrealizedPosition,
 } from '@/lib/types'
 
+export type CredentialValidationCode =
+  | 'valid'
+  | 'invalid_api_key'
+  | 'region_blocked'
+  | 'unreachable'
+  | 'time_drift'
+
+export type CredentialValidationResult = {
+  ok: boolean
+  code: CredentialValidationCode
+  upstreamStatus?: number | null
+  exchangeCode?: number | string | null
+  message?: string | null
+}
+
 export interface ExchangeAdapter {
   validateCredentials(credentials: ExchangeCredentials): Promise<boolean>
+  validateCredentialsDetailed?(
+    credentials: ExchangeCredentials
+  ): Promise<CredentialValidationResult>
   hasWithdrawPermission(credentials: ExchangeCredentials): Promise<boolean>
   fetchTrades(
     credentials: ExchangeCredentials,

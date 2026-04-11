@@ -5,7 +5,11 @@ import type {
   AssetBalance,
   UnrealizedPosition,
 } from '@/lib/types'
-import type { ExchangeAdapter } from './exchangeFactory'
+import {
+  type ExchangeAdapter,
+  type CredentialValidationResult,
+} from './exchangeFactory'
+import { fetchExchange } from './httpClient'
 
 const BASE_URL = 'https://api.bybit.com'
 const REQUEST_TIMEOUT = 10_000
@@ -18,11 +22,17 @@ function sign(apiKey: string, secret: string, timestamp: number, queryString: st
   return createHmac('sha256', secret).update(payload).digest('hex')
 }
 
-async function fetchWithTimeout(url: string, options?: RequestInit): Promise<Response> {
+type RequestInitWithProxy = RequestInit & { proxy?: string | null }
+
+async function fetchWithTimeout(url: string, options?: RequestInitWithProxy): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
   try {
-    return await fetch(url, { ...options, signal: controller.signal })
+    return await fetchExchange(url, {
+      ...options,
+      signal: controller.signal,
+      proxy: options?.proxy ? String(options.proxy) : null,
+    })
   } finally {
     clearTimeout(timer)
   }
@@ -32,17 +42,52 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function fetchWithRetry(url: string, options?: RequestInit, attempt = 0): Promise<Response> {
-  const response = await fetchWithTimeout(url, options)
+async function fetchWithRetry(
+  url: string,
+  options?: RequestInitWithProxy,
+  attempt = 0,
+  proxy?: string | null
+): Promise<Response> {
+  const response = await fetchWithTimeout(
+    url,
+    proxy
+      ? ({
+          ...(options ?? {}),
+          proxy,
+        } as RequestInitWithProxy)
+      : options
+  )
   if (response.status === 429 && attempt < 4) {
     const backoff = Math.min(Math.pow(2, attempt) * 1000, 60_000)
     await sleep(backoff + Math.random() * 500)
-    return fetchWithRetry(url, options, attempt + 1)
+    return fetchWithRetry(url, options, attempt + 1, proxy)
   }
   return response
 }
 
 export class BybitAdapter implements ExchangeAdapter {
+  private proxy: string | null = null
+
+  private async withProxy<T>(
+    credentials: ExchangeCredentials,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    const previousProxy = this.proxy
+    if (typeof credentials.proxy === 'string') {
+      this.proxy = credentials.proxy.trim() || null
+    }
+
+    try {
+      return await fn()
+    } finally {
+      this.proxy = previousProxy
+    }
+  }
+
+  private async fetchWithRetry(url: string, options?: RequestInit): Promise<Response> {
+    return fetchWithRetry(url, options, 0, this.proxy)
+  }
+
   private buildHeaders(credentials: ExchangeCredentials, queryString: string): Record<string, string> {
     const timestamp = Date.now()
     const signature = sign(credentials.apiKey, credentials.apiSecret, timestamp, queryString)
@@ -56,191 +101,287 @@ export class BybitAdapter implements ExchangeAdapter {
   }
 
   async validateCredentials(credentials: ExchangeCredentials): Promise<boolean> {
-    try {
-      const queryApiOk = await this.verifyQueryApi(credentials)
-      if (queryApiOk) return true
+    const result = await this.validateCredentialsDetailed(credentials)
+    return result.ok
+  }
 
-      const accountTypes = ['UNIFIED', 'SPOT', 'CONTRACT'] as const
-      for (const accountType of accountTypes) {
-        const walletBalanceOk = await this.verifyWalletBalance(credentials, accountType)
-        if (walletBalanceOk) return true
+  async validateCredentialsDetailed(
+    credentials: ExchangeCredentials
+  ): Promise<CredentialValidationResult> {
+    return this.withProxy(credentials, async () => {
+      try {
+        const queryApiResult = await this.verifyBybitEndpoint(credentials, '/v5/user/query-api')
+        if (queryApiResult.ok) {
+          return { ok: true, code: 'valid' }
+        }
+
+        const accountTypes: Array<'UNIFIED' | 'SPOT' | 'CONTRACT'> = ['UNIFIED', 'SPOT', 'CONTRACT']
+        for (const accountType of accountTypes) {
+          const queryString = `accountType=${encodeURIComponent(accountType)}`
+          const result = await this.verifyBybitEndpoint(
+            credentials,
+            `/v5/account/wallet-balance?${queryString}`,
+            queryString
+          )
+
+          if (result.ok) {
+            return { ok: true, code: 'valid' }
+          }
+
+          if (result.exchangeCode === 10020) {
+            continue
+          }
+
+          return this.classifyBybitValidationFailure(result)
+        }
+
+        return {
+          ok: false,
+          code: 'invalid_api_key',
+          upstreamStatus: queryApiResult.upstreamStatus,
+          exchangeCode: queryApiResult.exchangeCode,
+          message: queryApiResult.message,
+        }
+      } catch {
+        return {
+          ok: false,
+          code: 'unreachable',
+          message: 'Bybit validation request failed',
+        }
       }
+    })
+  }
 
-      return false
+  private async verifyBybitEndpoint(
+    credentials: ExchangeCredentials,
+    path: string,
+    queryString = ''
+  ): Promise<{
+    ok: boolean
+    upstreamStatus: number
+    exchangeCode: number | null
+    message: string | null
+  }> {
+    const headers = this.buildHeaders(credentials, queryString)
+    const response = await this.fetchWithRetry(`${BASE_URL}${path}`, { headers })
+
+    try {
+      const data = (await response.json()) as { retCode?: number; retMsg?: string }
+      const exchangeCode = typeof data.retCode === 'number' ? data.retCode : null
+      const message = typeof data.retMsg === 'string' ? data.retMsg : null
+
+      return {
+        ok: response.ok && exchangeCode === 0,
+        upstreamStatus: response.status,
+        exchangeCode,
+        message,
+      }
     } catch {
-      return false
+      return {
+        ok: response.ok,
+        upstreamStatus: response.status,
+        exchangeCode: null,
+        message: null,
+      }
     }
   }
 
-  private async verifyQueryApi(credentials: ExchangeCredentials): Promise<boolean> {
-    const queryString = ''
-    const headers = this.buildHeaders(credentials, queryString)
-    const response = await fetchWithRetry(`${BASE_URL}/v5/user/query-api`, { headers })
-    if (!response.ok) return false
+  private classifyBybitValidationFailure(result: {
+    upstreamStatus: number
+    exchangeCode: number | null
+    message: string | null
+  }): CredentialValidationResult {
+    if (result.upstreamStatus === 403 || result.upstreamStatus === 451) {
+      return {
+        ok: false,
+        code: 'region_blocked',
+        upstreamStatus: result.upstreamStatus,
+        exchangeCode: result.exchangeCode,
+        message: result.message,
+      }
+    }
 
-    const data = (await response.json()) as { retCode: number }
-    return data.retCode === 0
-  }
+    if (result.exchangeCode === 10002) {
+      return {
+        ok: false,
+        code: 'time_drift',
+        upstreamStatus: result.upstreamStatus,
+        exchangeCode: result.exchangeCode,
+        message: result.message,
+      }
+    }
 
-  private async verifyWalletBalance(
-    credentials: ExchangeCredentials,
-    accountType: 'UNIFIED' | 'SPOT' | 'CONTRACT'
-  ): Promise<boolean> {
-    const queryString = `accountType=${encodeURIComponent(accountType)}`
-    const headers = this.buildHeaders(credentials, queryString)
-    const response = await fetchWithRetry(`${BASE_URL}/v5/account/wallet-balance?${queryString}`, {
-      headers,
-    })
-    if (!response.ok) return false
+    if (result.upstreamStatus >= 500) {
+      return {
+        ok: false,
+        code: 'unreachable',
+        upstreamStatus: result.upstreamStatus,
+        exchangeCode: result.exchangeCode,
+        message: result.message,
+      }
+    }
 
-    const data = (await response.json()) as { retCode: number }
-    return data.retCode === 0
+    return {
+      ok: false,
+      code: 'invalid_api_key',
+      upstreamStatus: result.upstreamStatus,
+      exchangeCode: result.exchangeCode,
+      message: result.message,
+    }
   }
 
   async hasWithdrawPermission(credentials: ExchangeCredentials): Promise<boolean> {
-    try {
-      const queryString = ''
-      const headers = this.buildHeaders(credentials, queryString)
-      const response = await fetchWithRetry(`${BASE_URL}/v5/user/query-api`, { headers })
-      if (!response.ok) return false
-      const data = (await response.json()) as { retCode: number; result?: { permissions?: { Withdraw?: boolean } } }
-      if (data.retCode !== 0) return false
-      return Boolean(data.result?.permissions?.Withdraw)
-    } catch {
-      return false
-    }
+    return this.withProxy(credentials, async () => {
+      try {
+        const queryString = ''
+        const headers = this.buildHeaders(credentials, queryString)
+        const response = await this.fetchWithRetry(`${BASE_URL}/v5/user/query-api`, { headers })
+        if (!response.ok) return false
+        const data = (await response.json()) as { retCode: number; result?: { permissions?: { Withdraw?: boolean } } }
+        if (data.retCode !== 0) return false
+        return Boolean(data.result?.permissions?.Withdraw)
+      } catch {
+        return false
+      }
+    })
   }
 
   async fetchTrades(credentials: ExchangeCredentials, since?: Date): Promise<ExchangeAdapterTrade[]> {
-    const startTime = since ? since.getTime() : Date.now() - DEFAULT_LOOKBACK_MS
-    const now = Date.now()
-    const categories: Array<{ category: 'spot' | 'linear' | 'inverse'; tradeType: 'spot' | 'futures' }> = [
-      { category: 'spot', tradeType: 'spot' },
-      { category: 'linear', tradeType: 'futures' },
-      { category: 'inverse', tradeType: 'futures' },
-    ]
+    return this.withProxy(credentials, async () => {
+      const startTime = since ? since.getTime() : Date.now() - DEFAULT_LOOKBACK_MS
+      const now = Date.now()
+      const categories: Array<{ category: 'spot' | 'linear' | 'inverse'; tradeType: 'spot' | 'futures' }> = [
+        { category: 'spot', tradeType: 'spot' },
+        { category: 'linear', tradeType: 'futures' },
+        { category: 'inverse', tradeType: 'futures' },
+      ]
 
-    const batches = await Promise.all(
-      categories.map(async ({ category, tradeType }) => {
-        const allTrades: BybitTrade[] = []
-        const dedup = new Set<string>()
-        let windowStart = startTime
+      const batches = await Promise.all(
+        categories.map(async ({ category, tradeType }) => {
+          const allTrades: BybitTrade[] = []
+          const dedup = new Set<string>()
+          let windowStart = startTime
 
-        while (windowStart <= now) {
-          const windowEnd = Math.min(windowStart + BYBIT_HISTORY_WINDOW_MS - 1, now)
-          let cursor = ''
+          while (windowStart <= now) {
+            const windowEnd = Math.min(windowStart + BYBIT_HISTORY_WINDOW_MS - 1, now)
+            let cursor = ''
 
-          for (let page = 0; page < 50; page += 1) {
-            const query = new URLSearchParams({
-              category,
-              startTime: String(windowStart),
-              endTime: String(windowEnd),
-              limit: '100',
-            })
-            if (cursor) query.set('cursor', cursor)
+            for (let page = 0; page < 50; page += 1) {
+              const query = new URLSearchParams({
+                category,
+                startTime: String(windowStart),
+                endTime: String(windowEnd),
+                limit: '100',
+              })
+              if (cursor) query.set('cursor', cursor)
 
-            const queryString = query.toString()
-            const headers = this.buildHeaders(credentials, queryString)
-            const response = await fetchWithRetry(`${BASE_URL}/v5/execution/list?${queryString}`, { headers })
-            if (!response.ok) break
+              const queryString = query.toString()
+              const headers = this.buildHeaders(credentials, queryString)
+              const response = await this.fetchWithRetry(`${BASE_URL}/v5/execution/list?${queryString}`, { headers })
+              if (!response.ok) break
 
-            const data = (await response.json()) as {
-              retCode: number
-              result?: { list?: BybitTrade[]; nextPageCursor?: string }
+              const data = (await response.json()) as {
+                retCode: number
+                result?: { list?: BybitTrade[]; nextPageCursor?: string }
+              }
+              if (data.retCode !== 0) break
+
+              const pageTrades = data.result?.list ?? []
+              for (const trade of pageTrades) {
+                const dedupKey = trade.execId || `${trade.symbol}:${trade.execTime}:${trade.execQty}`
+                if (dedup.has(dedupKey)) continue
+                dedup.add(dedupKey)
+                allTrades.push(trade)
+              }
+
+              cursor = data.result?.nextPageCursor ?? ''
+              if (!cursor || pageTrades.length < 100) break
+              await sleep(80)
             }
-            if (data.retCode !== 0) break
 
-            const pageTrades = data.result?.list ?? []
-            for (const trade of pageTrades) {
-              const dedupKey = trade.execId || `${trade.symbol}:${trade.execTime}:${trade.execQty}`
-              if (dedup.has(dedupKey)) continue
-              dedup.add(dedupKey)
-              allTrades.push(trade)
-            }
-
-            cursor = data.result?.nextPageCursor ?? ''
-            if (!cursor || pageTrades.length < 100) break
+            windowStart = windowEnd + 1
             await sleep(80)
           }
 
-          windowStart = windowEnd + 1
-          await sleep(80)
-        }
+          const normalizedTrades = allTrades.map((trade) => this.normalizeTrade(trade, tradeType))
+          if (tradeType !== 'futures') {
+            return normalizedTrades
+          }
 
-        const normalizedTrades = allTrades.map((trade) => this.normalizeTrade(trade, tradeType))
-        if (tradeType !== 'futures') {
-          return normalizedTrades
-        }
+          const futuresCategory: 'linear' | 'inverse' = category === 'inverse' ? 'inverse' : 'linear'
+          const closedPnlRows = await this.fetchClosedPnlEvents(
+            credentials,
+            futuresCategory,
+            startTime,
+            now
+          )
+          return this.mergeFuturesTradesWithClosedPnl(normalizedTrades, closedPnlRows)
+        })
+      )
 
-        const futuresCategory: 'linear' | 'inverse' = category === 'inverse' ? 'inverse' : 'linear'
-        const closedPnlRows = await this.fetchClosedPnlEvents(
-          credentials,
-          futuresCategory,
-          startTime,
-          now
-        )
-        return this.mergeFuturesTradesWithClosedPnl(normalizedTrades, closedPnlRows)
-      })
-    )
-
-    return this.deduplicateTrades(batches.flat())
+      return this.deduplicateTrades(batches.flat())
+    })
   }
 
   async fetchOpenPositions(credentials: ExchangeCredentials): Promise<UnrealizedPosition[]> {
-    const queryString = 'category=linear&settleCoin=USDT'
-    const headers = this.buildHeaders(credentials, queryString)
-    const response = await fetchWithRetry(`${BASE_URL}/v5/position/list?${queryString}`, { headers })
+    return this.withProxy(credentials, async () => {
+      const queryString = 'category=linear&settleCoin=USDT'
+      const headers = this.buildHeaders(credentials, queryString)
+      const response = await this.fetchWithRetry(`${BASE_URL}/v5/position/list?${queryString}`, { headers })
 
-    if (!response.ok) return []
+      if (!response.ok) return []
 
-    const data = (await response.json()) as { retCode: number; result?: { list?: BybitPosition[] } }
-    if (data.retCode !== 0) return []
+      const data = (await response.json()) as { retCode: number; result?: { list?: BybitPosition[] } }
+      if (data.retCode !== 0) return []
 
-    return (data.result?.list ?? [])
-      .filter((position) => Math.abs(parseFloat(position.size ?? '0')) > 0)
-      .map((position) => ({
-        symbol: position.symbol,
-        side: (position.side ?? '').toLowerCase() === 'sell' ? 'short' : 'long',
-        size: Math.abs(parseFloat(position.size)),
-        entryPrice: parseFloat(position.avgPrice ?? '0'),
-        markPrice: parseFloat(position.markPrice ?? '0'),
-        unrealizedPnl: parseFloat(position.unrealisedPnl ?? '0'),
-        leverage: parseFloat(position.leverage ?? '0') || 1,
-        tradeType: 'futures',
-      }))
+      return (data.result?.list ?? [])
+        .filter((position) => Math.abs(parseFloat(position.size ?? '0')) > 0)
+        .map((position) => ({
+          symbol: position.symbol,
+          side: (position.side ?? '').toLowerCase() === 'sell' ? 'short' : 'long',
+          size: Math.abs(parseFloat(position.size)),
+          entryPrice: parseFloat(position.avgPrice ?? '0'),
+          markPrice: parseFloat(position.markPrice ?? '0'),
+          unrealizedPnl: parseFloat(position.unrealisedPnl ?? '0'),
+          leverage: parseFloat(position.leverage ?? '0') || 1,
+          tradeType: 'futures',
+        }))
+    })
   }
 
   async fetchBalances(credentials: ExchangeCredentials): Promise<AssetBalance[]> {
-    const queryString = 'accountType=UNIFIED'
-    const headers = this.buildHeaders(credentials, queryString)
-    const response = await fetchWithRetry(`${BASE_URL}/v5/account/wallet-balance?${queryString}`, { headers })
+    return this.withProxy(credentials, async () => {
+      const queryString = 'accountType=UNIFIED'
+      const headers = this.buildHeaders(credentials, queryString)
+      const response = await this.fetchWithRetry(`${BASE_URL}/v5/account/wallet-balance?${queryString}`, { headers })
 
-    if (!response.ok) return []
+      if (!response.ok) return []
 
-    const data = (await response.json()) as {
-      retCode: number
-      result?: { list?: Array<{ coin?: Array<{ coin: string; walletBalance: string; locked: string }> }> }
-    }
-    if (data.retCode !== 0) return []
-
-    const balances: AssetBalance[] = []
-    for (const account of data.result?.list ?? []) {
-      for (const coin of account.coin ?? []) {
-        const free = parseFloat(coin.walletBalance)
-        const locked = parseFloat(coin.locked ?? '0')
-        const total = free + locked
-        if (total <= 0) continue
-        const price = await this.getUsdPrice(coin.coin)
-        balances.push({
-          asset: coin.coin,
-          free,
-          locked,
-          usdValue: total * price,
-        })
+      const data = (await response.json()) as {
+        retCode: number
+        result?: { list?: Array<{ coin?: Array<{ coin: string; walletBalance: string; locked: string }> }> }
       }
-    }
+      if (data.retCode !== 0) return []
 
-    return balances
+      const balances: AssetBalance[] = []
+      for (const account of data.result?.list ?? []) {
+        for (const coin of account.coin ?? []) {
+          const free = parseFloat(coin.walletBalance)
+          const locked = parseFloat(coin.locked ?? '0')
+          const total = free + locked
+          if (total <= 0) continue
+          const price = await this.getUsdPrice(coin.coin)
+          balances.push({
+            asset: coin.coin,
+            free,
+            locked,
+            usdValue: total * price,
+          })
+        }
+      }
+
+      return balances
+    })
   }
 
   private normalizeTrade(trade: BybitTrade, tradeType: 'spot' | 'futures'): ExchangeAdapterTrade {
@@ -285,7 +426,7 @@ export class BybitAdapter implements ExchangeAdapter {
 
         const queryString = query.toString()
         const headers = this.buildHeaders(credentials, queryString)
-        const response = await fetchWithRetry(`${BASE_URL}/v5/position/closed-pnl?${queryString}`, {
+        const response = await this.fetchWithRetry(`${BASE_URL}/v5/position/closed-pnl?${queryString}`, {
           headers,
         })
 
@@ -434,7 +575,7 @@ export class BybitAdapter implements ExchangeAdapter {
     if (asset === 'USDT' || asset === 'USDC' || asset === 'USD') return 1
     try {
       const queryString = `category=spot&symbol=${asset}USDT`
-      const response = await fetchWithRetry(`${BASE_URL}/v5/market/tickers?${queryString}`)
+      const response = await this.fetchWithRetry(`${BASE_URL}/v5/market/tickers?${queryString}`)
       if (!response.ok) return 0
       const data = (await response.json()) as {
         retCode: number

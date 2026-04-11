@@ -68,35 +68,57 @@ export async function createApiKey(
   keyIv: string,
   secretIv: string,
   passphraseEncrypted: string | null,
-  passphraseIv: string | null
+  passphraseIv: string | null,
+  proxyEncrypted: string | null,
+  proxyIv: string | null
 ): Promise<boolean> {
-  const primary = await supabase.from('api_keys').insert({
-    exchange_account_id: exchangeAccountId,
-    key_encrypted: keyEncrypted,
-    secret_encrypted: secretEncrypted,
-    passphrase_encrypted: passphraseEncrypted,
-    key_iv: keyIv,
-    secret_iv: secretIv,
-    passphrase_iv: passphraseIv,
-  })
+  let includePassphrase = true
+  let includeProxy = true
 
-  if (!primary.error) return true
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const payload: Record<string, unknown> = {
+      exchange_account_id: exchangeAccountId,
+      key_encrypted: keyEncrypted,
+      secret_encrypted: secretEncrypted,
+      key_iv: keyIv,
+      secret_iv: secretIv,
+    }
 
-  const missingPassphraseColumn =
-    hasMissingColumnError(primary.error, 'passphrase_encrypted') ||
-    hasMissingColumnError(primary.error, 'passphrase_iv')
+    if (includePassphrase) {
+      payload.passphrase_encrypted = passphraseEncrypted
+      payload.passphrase_iv = passphraseIv
+    }
 
-  if (!missingPassphraseColumn) return false
+    if (includeProxy) {
+      payload.proxy_encrypted = proxyEncrypted
+      payload.proxy_iv = proxyIv
+    }
 
-  const fallback = await supabase.from('api_keys').insert({
-    exchange_account_id: exchangeAccountId,
-    key_encrypted: keyEncrypted,
-    secret_encrypted: secretEncrypted,
-    key_iv: keyIv,
-    secret_iv: secretIv,
-  })
+    const result = await supabase.from('api_keys').insert(payload)
+    if (!result.error) return true
 
-  return !fallback.error
+    const missingPassphraseColumn =
+      hasMissingColumnError(result.error, 'passphrase_encrypted') ||
+      hasMissingColumnError(result.error, 'passphrase_iv')
+
+    const missingProxyColumn =
+      hasMissingColumnError(result.error, 'proxy_encrypted') ||
+      hasMissingColumnError(result.error, 'proxy_iv')
+
+    if (!missingPassphraseColumn && !missingProxyColumn) {
+      return false
+    }
+
+    if (missingPassphraseColumn) {
+      includePassphrase = false
+    }
+
+    if (missingProxyColumn) {
+      includeProxy = false
+    }
+  }
+
+  return false
 }
 
 export async function getExchangeAccounts(
@@ -178,9 +200,11 @@ export async function getApiKey(
     secret_encrypted: String(data.secret_encrypted),
     passphrase_encrypted:
       typeof data.passphrase_encrypted === 'string' ? data.passphrase_encrypted : null,
+    proxy_encrypted: typeof data.proxy_encrypted === 'string' ? data.proxy_encrypted : null,
     key_iv: String(data.key_iv),
     secret_iv: String(data.secret_iv),
     passphrase_iv: typeof data.passphrase_iv === 'string' ? data.passphrase_iv : null,
+    proxy_iv: typeof data.proxy_iv === 'string' ? data.proxy_iv : null,
     key_version: typeof data.key_version === 'number' ? data.key_version : 1,
     created_at: String(data.created_at),
   }
@@ -272,39 +296,60 @@ export async function updateApiKeyRecord(
   keyIv: string,
   secretIv: string,
   passphraseEncrypted: string | null,
-  passphraseIv: string | null
+  passphraseIv: string | null,
+  proxyEncrypted: string | null,
+  proxyIv: string | null
 ): Promise<boolean> {
-  const primary = await supabase
-    .from('api_keys')
-    .update({
-      key_encrypted: keyEncrypted,
-      secret_encrypted: secretEncrypted,
-      passphrase_encrypted: passphraseEncrypted,
-      key_iv: keyIv,
-      secret_iv: secretIv,
-      passphrase_iv: passphraseIv,
-    })
-    .eq('exchange_account_id', exchangeAccountId)
+  let includePassphrase = true
+  let includeProxy = true
 
-  if (!primary.error) return true
-
-  const missingPassphraseColumn =
-    hasMissingColumnError(primary.error, 'passphrase_encrypted') ||
-    hasMissingColumnError(primary.error, 'passphrase_iv')
-
-  if (!missingPassphraseColumn) return false
-
-  const fallback = await supabase
-    .from('api_keys')
-    .update({
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const payload: Record<string, unknown> = {
       key_encrypted: keyEncrypted,
       secret_encrypted: secretEncrypted,
       key_iv: keyIv,
       secret_iv: secretIv,
-    })
-    .eq('exchange_account_id', exchangeAccountId)
+    }
 
-  return !fallback.error
+    if (includePassphrase) {
+      payload.passphrase_encrypted = passphraseEncrypted
+      payload.passphrase_iv = passphraseIv
+    }
+
+    if (includeProxy) {
+      payload.proxy_encrypted = proxyEncrypted
+      payload.proxy_iv = proxyIv
+    }
+
+    const result = await supabase
+      .from('api_keys')
+      .update(payload)
+      .eq('exchange_account_id', exchangeAccountId)
+
+    if (!result.error) return true
+
+    const missingPassphraseColumn =
+      hasMissingColumnError(result.error, 'passphrase_encrypted') ||
+      hasMissingColumnError(result.error, 'passphrase_iv')
+
+    const missingProxyColumn =
+      hasMissingColumnError(result.error, 'proxy_encrypted') ||
+      hasMissingColumnError(result.error, 'proxy_iv')
+
+    if (!missingPassphraseColumn && !missingProxyColumn) {
+      return false
+    }
+
+    if (missingPassphraseColumn) {
+      includePassphrase = false
+    }
+
+    if (missingProxyColumn) {
+      includeProxy = false
+    }
+  }
+
+  return false
 }
 
 export async function exchangeAccountExists(

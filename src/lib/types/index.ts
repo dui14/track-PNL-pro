@@ -59,6 +59,7 @@ export type ExchangeCredentials = {
   apiKey: string
   apiSecret: string
   passphrase?: string
+  proxy?: string
 }
 
 export type ApiKeyRow = {
@@ -67,9 +68,11 @@ export type ApiKeyRow = {
   key_encrypted: string
   secret_encrypted: string
   passphrase_encrypted: string | null
+  proxy_encrypted: string | null
   key_iv: string
   secret_iv: string
   passphrase_iv: string | null
+  proxy_iv: string | null
   key_version: number
   created_at: string
 }

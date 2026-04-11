@@ -115,7 +115,7 @@ export async function PUT(
   }
 
   const { id } = await params
-  const { apiKey, apiSecret, passphrase, label } = parsed.data
+  const { apiKey, apiSecret, passphrase, label, proxy } = parsed.data
   const result = await updateExchangeApiKeys(
     supabase,
     user.id,
@@ -123,7 +123,8 @@ export async function PUT(
     apiKey,
     apiSecret,
     passphrase,
-    label === undefined ? undefined : (label ?? undefined)
+    label === undefined ? undefined : (label ?? undefined),
+    proxy
   )
 
   if (!result.success) {
@@ -131,6 +132,9 @@ export async function PUT(
       NOT_FOUND: 404,
       PASSPHRASE_REQUIRED: 400,
       INVALID_API_KEY: 400,
+      EXCHANGE_REGION_BLOCKED: 400,
+      EXCHANGE_TIME_DRIFT: 400,
+      EXCHANGE_UNREACHABLE: 502,
       WITHDRAW_PERMISSION_DETECTED: 400,
       UNSUPPORTED_EXCHANGE: 400,
       INTERNAL_ERROR: 500,

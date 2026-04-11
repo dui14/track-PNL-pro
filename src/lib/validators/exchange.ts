@@ -10,6 +10,9 @@ export const ConnectExchangeSchema = z.object({
     message: 'API_SECRET_INVALID',
   }),
   passphrase: z.string().trim().min(1).max(100).optional(),
+  proxy: z.string().trim().min(3).max(1024).refine((value) => !/\s/.test(value), {
+    message: 'PROXY_INVALID',
+  }).optional(),
   label: z.string().trim().min(1).max(50).optional(),
 }).superRefine((data, ctx) => {
   if ((data.exchange === 'okx' || data.exchange === 'bitget') && !data.passphrase) {
@@ -37,6 +40,9 @@ export const UpdateExchangeKeysSchema = z.object({
     message: 'API_SECRET_INVALID',
   }),
   passphrase: z.string().trim().min(1).max(100).optional(),
+  proxy: z.string().trim().min(3).max(1024).refine((value) => !/\s/.test(value), {
+    message: 'PROXY_INVALID',
+  }).optional(),
   label: z.string().max(50).nullable().optional(),
 })
 

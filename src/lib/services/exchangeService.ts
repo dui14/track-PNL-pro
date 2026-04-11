@@ -23,12 +23,54 @@ import {
 } from '@/lib/db/exchangeDb'
 import { deleteExchangeTrackingData, upsertTrades } from '@/lib/db/tradesDb'
 import { encrypt, decrypt } from '@/lib/adapters/encryption'
-import { createExchangeAdapter } from '@/lib/adapters/exchangeFactory'
+import {
+  createExchangeAdapter,
+  type ExchangeAdapter,
+  type CredentialValidationResult,
+} from '@/lib/adapters/exchangeFactory'
+
+type ExchangeCredentialError =
+  | 'INVALID_API_KEY'
+  | 'EXCHANGE_REGION_BLOCKED'
+  | 'EXCHANGE_UNREACHABLE'
+  | 'EXCHANGE_TIME_DRIFT'
 
 function getSyncLookbackDate(): Date {
   const lookback = new Date()
   lookback.setUTCFullYear(lookback.getUTCFullYear() - 1)
   return lookback
+}
+
+function mapValidationCodeToError(code: CredentialValidationResult['code']): ExchangeCredentialError {
+  if (code === 'region_blocked') return 'EXCHANGE_REGION_BLOCKED'
+  if (code === 'unreachable') return 'EXCHANGE_UNREACHABLE'
+  if (code === 'time_drift') return 'EXCHANGE_TIME_DRIFT'
+  return 'INVALID_API_KEY'
+}
+
+async function validateCredentialsForAdapter(
+  adapter: ExchangeAdapter,
+  credentials: ExchangeCredentials
+): Promise<Result<true, ExchangeCredentialError>> {
+  try {
+    if (typeof adapter.validateCredentialsDetailed === 'function') {
+      const detailed = await adapter.validateCredentialsDetailed(credentials)
+      if (detailed.ok) {
+        return { success: true, data: true }
+      }
+
+      return { success: false, error: mapValidationCodeToError(detailed.code) }
+    }
+
+    const isValid = await adapter.validateCredentials(credentials)
+    if (!isValid) {
+      return { success: false, error: 'INVALID_API_KEY' }
+    }
+
+    return { success: true, data: true }
+  } catch {
+    return { success: false, error: 'EXCHANGE_UNREACHABLE' }
+  }
 }
 
 export async function connectExchange(
@@ -38,7 +80,8 @@ export async function connectExchange(
   apiKey: string,
   apiSecret: string,
   passphrase?: string,
-  label?: string
+  label?: string,
+  proxy?: string
 ): Promise<Result<ExchangeAccount>> {
   if ((exchange === 'okx' || exchange === 'bitget') && !passphrase) {
     return { success: false, error: 'PASSPHRASE_REQUIRED' }
@@ -60,11 +103,12 @@ export async function connectExchange(
     apiKey,
     apiSecret,
     passphrase,
+    proxy,
   }
 
-  const isValid = await adapter.validateCredentials(credentials)
-  if (!isValid) {
-    return { success: false, error: 'INVALID_API_KEY' }
+  const validation = await validateCredentialsForAdapter(adapter, credentials)
+  if (!validation.success) {
+    return { success: false, error: validation.error }
   }
 
   const hasWithdrawPermission = await adapter.hasWithdrawPermission(credentials)
@@ -75,6 +119,7 @@ export async function connectExchange(
   const encryptedKey = encrypt(apiKey)
   const encryptedSecret = encrypt(apiSecret)
   const encryptedPassphrase = passphrase ? encrypt(passphrase) : null
+  const encryptedProxy = proxy ? encrypt(proxy) : null
 
   const account = await createExchangeAccount(supabase, userId, exchange, label ?? null)
   if (!account) {
@@ -91,7 +136,9 @@ export async function connectExchange(
     encryptedKey.iv,
     encryptedSecret.iv,
     encryptedPassphrase?.encrypted ?? null,
-    encryptedPassphrase?.iv ?? null
+    encryptedPassphrase?.iv ?? null,
+    encryptedProxy?.encrypted ?? null,
+    encryptedProxy?.iv ?? null
   )
   if (!keyCreated) {
     return { success: false, error: 'INTERNAL_ERROR' }
@@ -138,6 +185,12 @@ export async function syncExchangeAccount(
   }
 
   const adapter = await createExchangeAdapter(account.exchange)
+  const validation = await validateCredentialsForAdapter(adapter, credentials)
+  if (!validation.success) {
+    await updateSyncStatus(supabase, exchangeAccountId, 'error', validation.error)
+    return { success: false, error: validation.error }
+  }
+
   const since = getSyncLookbackDate()
 
   let trades
@@ -243,7 +296,8 @@ export async function updateExchangeApiKeys(
   apiKey: string,
   apiSecret: string,
   passphrase?: string,
-  label?: string
+  label?: string,
+  proxy?: string
 ): Promise<Result<ExchangeAccount>> {
   const account = await getExchangeAccountById(supabase, accountId, userId)
   if (!account) {
@@ -265,11 +319,12 @@ export async function updateExchangeApiKeys(
     apiKey,
     apiSecret,
     passphrase,
+    proxy,
   }
 
-  const isValid = await adapter.validateCredentials(credentials)
-  if (!isValid) {
-    return { success: false, error: 'INVALID_API_KEY' }
+  const validation = await validateCredentialsForAdapter(adapter, credentials)
+  if (!validation.success) {
+    return { success: false, error: validation.error }
   }
 
   const hasWithdrawPermission = await adapter.hasWithdrawPermission(credentials)
@@ -280,6 +335,7 @@ export async function updateExchangeApiKeys(
   const encryptedKey = encrypt(apiKey)
   const encryptedSecret = encrypt(apiSecret)
   const encryptedPassphrase = passphrase ? encrypt(passphrase) : null
+  const encryptedProxy = proxy ? encrypt(proxy) : null
 
   const serviceSupabase = (await import('@/lib/db/supabase-server')).createSupabaseServiceClient()
 
@@ -291,7 +347,9 @@ export async function updateExchangeApiKeys(
     encryptedKey.iv,
     encryptedSecret.iv,
     encryptedPassphrase?.encrypted ?? null,
-    encryptedPassphrase?.iv ?? null
+    encryptedPassphrase?.iv ?? null,
+    encryptedProxy?.encrypted ?? null,
+    encryptedProxy?.iv ?? null
   )
   if (!keyUpdated) {
     return { success: false, error: 'INTERNAL_ERROR' }
@@ -397,6 +455,8 @@ function decryptCredentials(apiKeyRow: {
   secret_iv: string
   passphrase_encrypted: string | null
   passphrase_iv: string | null
+  proxy_encrypted: string | null
+  proxy_iv: string | null
 }): ExchangeCredentials | null {
   try {
     const apiKey = decrypt(apiKeyRow.key_encrypted, apiKeyRow.key_iv)
@@ -405,11 +465,16 @@ function decryptCredentials(apiKeyRow: {
       apiKeyRow.passphrase_encrypted && apiKeyRow.passphrase_iv
         ? decrypt(apiKeyRow.passphrase_encrypted, apiKeyRow.passphrase_iv)
         : undefined
+    const proxy =
+      apiKeyRow.proxy_encrypted && apiKeyRow.proxy_iv
+        ? decrypt(apiKeyRow.proxy_encrypted, apiKeyRow.proxy_iv)
+        : undefined
 
     return {
       apiKey,
       apiSecret,
       passphrase,
+      proxy,
     }
   } catch {
     return null

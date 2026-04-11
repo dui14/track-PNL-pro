@@ -5,7 +5,11 @@ import type {
   AssetBalance,
   UnrealizedPosition,
 } from '@/lib/types'
-import type { ExchangeAdapter } from './exchangeFactory'
+import {
+  type ExchangeAdapter,
+  type CredentialValidationResult,
+} from './exchangeFactory'
+import { fetchExchange } from './httpClient'
 
 const BASE_URL = 'https://api.binance.com'
 const FUTURES_URL = 'https://fapi.binance.com'
@@ -36,11 +40,17 @@ function sign(queryString: string, secret: string): string {
   return createHmac('sha256', secret).update(queryString).digest('hex')
 }
 
-async function fetchWithTimeout(url: string, options?: RequestInit): Promise<Response> {
+type RequestInitWithProxy = RequestInit & { proxy?: string | null }
+
+async function fetchWithTimeout(url: string, options?: RequestInitWithProxy): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal })
+    const response = await fetchExchange(url, {
+      ...options,
+      signal: controller.signal,
+      proxy: options?.proxy ? String(options.proxy) : null,
+    })
     return response
   } finally {
     clearTimeout(timer)
@@ -53,19 +63,30 @@ async function sleep(ms: number): Promise<void> {
 
 async function fetchWithRetry(
   url: string,
-  options?: RequestInit,
-  attempt = 0
+  options?: RequestInitWithProxy,
+  attempt = 0,
+  proxy?: string | null
 ): Promise<Response> {
-  const response = await fetchWithTimeout(url, options)
+  const response = await fetchWithTimeout(
+    url,
+    proxy
+      ? ({
+          ...(options ?? {}),
+          proxy,
+        } as RequestInit)
+      : options
+  )
   if (response.status === 429 && attempt < 4) {
     const backoff = Math.min(Math.pow(2, attempt) * 1000, 60_000)
     await sleep(backoff + Math.random() * 500)
-    return fetchWithRetry(url, options, attempt + 1)
+    return fetchWithRetry(url, options, attempt + 1, proxy)
   }
   return response
 }
 
 export class BinanceAdapter implements ExchangeAdapter {
+  private proxy: string | null = null
+
   private restrictionsCache:
     | {
         apiKey: string
@@ -74,45 +95,173 @@ export class BinanceAdapter implements ExchangeAdapter {
       }
     | null = null
 
-  async validateCredentials(credentials: ExchangeCredentials): Promise<boolean> {
+  private async withProxy<T>(
+    credentials: ExchangeCredentials,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    const previousProxy = this.proxy
+    if (typeof credentials.proxy === 'string') {
+      this.proxy = credentials.proxy.trim() || null
+    }
+
     try {
-      const restrictions = await this.fetchApiRestrictions(credentials)
-      if (restrictions.ok) return true
+      return await fn()
+    } finally {
+      this.proxy = previousProxy
+    }
+  }
 
-      const [spotAccountResponse, futuresAccountResponse] = await Promise.all([
-        this.fetchSignedAccount(credentials),
-        this.fetchSignedFuturesAccount(credentials),
-      ])
+  private async fetchWithRetry(
+    url: string,
+    options?: RequestInit
+  ): Promise<Response> {
+    return fetchWithRetry(url, options, 0, this.proxy)
+  }
 
-      return spotAccountResponse.ok || futuresAccountResponse.ok
+  async validateCredentials(credentials: ExchangeCredentials): Promise<boolean> {
+    const result = await this.validateCredentialsDetailed(credentials)
+    return result.ok
+  }
+
+  async validateCredentialsDetailed(
+    credentials: ExchangeCredentials
+  ): Promise<CredentialValidationResult> {
+    return this.withProxy(credentials, async () => {
+      try {
+        const restrictions = await this.fetchApiRestrictions(credentials)
+        if (restrictions.ok) {
+          return { ok: true, code: 'valid' }
+        }
+
+        const [spotResponse, futuresResponse] = await Promise.all([
+          this.fetchSignedAccount(credentials),
+          this.fetchSignedFuturesAccount(credentials),
+        ])
+
+        if (spotResponse.ok || futuresResponse.ok) {
+          return { ok: true, code: 'valid' }
+        }
+
+        const errors = await Promise.all([
+          this.parseBinanceError(spotResponse),
+          this.parseBinanceError(futuresResponse),
+        ])
+
+        return this.classifyBinanceValidationFailure(errors)
+      } catch {
+        return {
+          ok: false,
+          code: 'unreachable',
+          message: 'Binance validation request failed',
+        }
+      }
+    })
+  }
+
+  private classifyBinanceValidationFailure(
+    errors: Array<{ upstreamStatus: number; exchangeCode: number | null; message: string | null }>
+  ): CredentialValidationResult {
+    const regionBlocked = errors.find(
+      (error) =>
+        error.upstreamStatus === 451 ||
+        error.upstreamStatus === 403 ||
+        (error.message ?? '').toLowerCase().includes('restricted location')
+    )
+
+    if (regionBlocked) {
+      return {
+        ok: false,
+        code: 'region_blocked',
+        upstreamStatus: regionBlocked.upstreamStatus,
+        exchangeCode: regionBlocked.exchangeCode,
+        message: regionBlocked.message,
+      }
+    }
+
+    const timeDrift = errors.find((error) => error.exchangeCode === -1021)
+    if (timeDrift) {
+      return {
+        ok: false,
+        code: 'time_drift',
+        upstreamStatus: timeDrift.upstreamStatus,
+        exchangeCode: timeDrift.exchangeCode,
+        message: timeDrift.message,
+      }
+    }
+
+    const unreachable = errors.find((error) => error.upstreamStatus >= 500)
+    if (unreachable) {
+      return {
+        ok: false,
+        code: 'unreachable',
+        upstreamStatus: unreachable.upstreamStatus,
+        exchangeCode: unreachable.exchangeCode,
+        message: unreachable.message,
+      }
+    }
+
+    const first = errors[0] ?? {
+      upstreamStatus: 400,
+      exchangeCode: null,
+      message: null,
+    }
+
+    return {
+      ok: false,
+      code: 'invalid_api_key',
+      upstreamStatus: first.upstreamStatus,
+      exchangeCode: first.exchangeCode,
+      message: first.message,
+    }
+  }
+
+  private async parseBinanceError(response: Response): Promise<{
+    upstreamStatus: number
+    exchangeCode: number | null
+    message: string | null
+  }> {
+    const upstreamStatus = response.status
+    try {
+      const payload = (await response.json()) as { code?: number; msg?: string }
+      return {
+        upstreamStatus,
+        exchangeCode: typeof payload.code === 'number' ? payload.code : null,
+        message: typeof payload.msg === 'string' ? payload.msg : null,
+      }
     } catch {
-      return false
+      return {
+        upstreamStatus,
+        exchangeCode: null,
+        message: null,
+      }
     }
   }
 
   async hasWithdrawPermission(credentials: ExchangeCredentials): Promise<boolean> {
-    try {
-      const restrictions = await this.fetchApiRestrictions(credentials)
-      if (!restrictions.ok || !restrictions.data) return false
+    return this.withProxy(credentials, async () => {
+      try {
+        const restrictions = await this.fetchApiRestrictions(credentials)
+        if (!restrictions.ok || !restrictions.data) return false
 
-      const data = restrictions.data
+        const data = restrictions.data
 
-      if (typeof data.enableWithdrawals === 'boolean') {
-        return data.enableWithdrawals
+        if (typeof data.enableWithdrawals === 'boolean') {
+          return data.enableWithdrawals
+        }
+
+        if (typeof data.canWithdraw === 'boolean') {
+          return data.canWithdraw
+        }
+
+        if (typeof data.isWithdrawEnabled === 'boolean') {
+          return data.isWithdrawEnabled
+        }
+
+        return false
+      } catch {
+        return false
       }
-
-      if (typeof data.canWithdraw === 'boolean') {
-        return data.canWithdraw
-      }
-
-      if (typeof data.isWithdrawEnabled === 'boolean') {
-        return data.isWithdrawEnabled
-      }
-
-      return false
-    } catch {
-      return false
-    }
+    })
   }
 
   private async fetchSignedAccount(credentials: ExchangeCredentials): Promise<Response> {
@@ -123,7 +272,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     })
     params.append('signature', sign(params.toString(), credentials.apiSecret))
 
-    return fetchWithRetry(`${BASE_URL}/api/v3/account?${params.toString()}`, {
+    return this.fetchWithRetry(`${BASE_URL}/api/v3/account?${params.toString()}`, {
       headers: { 'X-MBX-APIKEY': credentials.apiKey },
     })
   }
@@ -136,7 +285,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     })
     params.append('signature', sign(params.toString(), credentials.apiSecret))
 
-    return fetchWithRetry(`${FUTURES_URL}/fapi/v2/account?${params.toString()}`, {
+    return this.fetchWithRetry(`${FUTURES_URL}/fapi/v2/account?${params.toString()}`, {
       headers: { 'X-MBX-APIKEY': credentials.apiKey },
     })
   }
@@ -196,7 +345,7 @@ export class BinanceAdapter implements ExchangeAdapter {
       })
       params.append('signature', sign(params.toString(), credentials.apiSecret))
 
-      const response = await fetchWithRetry(
+      const response = await this.fetchWithRetry(
         `${BASE_URL}/sapi/v1/account/apiRestrictions?${params.toString()}`,
         { headers: { 'X-MBX-APIKEY': credentials.apiKey } }
       )
@@ -215,7 +364,7 @@ export class BinanceAdapter implements ExchangeAdapter {
 
   private async fetchServerTime(): Promise<number | null> {
     try {
-      const response = await fetchWithRetry(`${BASE_URL}/api/v3/time`)
+      const response = await this.fetchWithRetry(`${BASE_URL}/api/v3/time`)
       if (!response.ok) return null
       const data = (await response.json()) as { serverTime?: number }
       return typeof data.serverTime === 'number' ? data.serverTime : null
@@ -228,11 +377,13 @@ export class BinanceAdapter implements ExchangeAdapter {
     credentials: ExchangeCredentials,
     since?: Date
   ): Promise<ExchangeAdapterTrade[]> {
-    const [spotTrades, futuresTrades] = await Promise.all([
-      this.fetchSpotTrades(credentials.apiKey, credentials.apiSecret, since),
-      this.fetchFuturesTrades(credentials.apiKey, credentials.apiSecret, since),
-    ])
-    return [...spotTrades, ...futuresTrades]
+    return this.withProxy(credentials, async () => {
+      const [spotTrades, futuresTrades] = await Promise.all([
+        this.fetchSpotTrades(credentials.apiKey, credentials.apiSecret, since),
+        this.fetchFuturesTrades(credentials.apiKey, credentials.apiSecret, since),
+      ])
+      return [...spotTrades, ...futuresTrades]
+    })
   }
 
   private async fetchSpotTrades(
@@ -282,7 +433,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     })
     params.append('signature', sign(params.toString(), apiSecret))
 
-    const response = await fetchWithRetry(`${BASE_URL}/api/v3/myTrades?${params}`, {
+    const response = await this.fetchWithRetry(`${BASE_URL}/api/v3/myTrades?${params}`, {
       headers: { 'X-MBX-APIKEY': apiKey },
     })
 
@@ -469,7 +620,7 @@ export class BinanceAdapter implements ExchangeAdapter {
           })
           params.append('signature', sign(params.toString(), apiSecret))
 
-          const response = await fetchWithRetry(`${FUTURES_URL}/fapi/v1/income?${params}`, {
+          const response = await this.fetchWithRetry(`${FUTURES_URL}/fapi/v1/income?${params}`, {
             headers: { 'X-MBX-APIKEY': apiKey },
           })
 
@@ -536,7 +687,7 @@ export class BinanceAdapter implements ExchangeAdapter {
       })
       params.append('signature', sign(params.toString(), apiSecret))
 
-      const response = await fetchWithRetry(`${FUTURES_URL}/fapi/v1/userTrades?${params}`, {
+      const response = await this.fetchWithRetry(`${FUTURES_URL}/fapi/v1/userTrades?${params}`, {
         headers: { 'X-MBX-APIKEY': apiKey },
       })
 
@@ -576,7 +727,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     })
     params.append('signature', sign(params.toString(), apiSecret))
 
-    const response = await fetchWithRetry(`${FUTURES_URL}/fapi/v1/userTrades?${params}`, {
+    const response = await this.fetchWithRetry(`${FUTURES_URL}/fapi/v1/userTrades?${params}`, {
       headers: { 'X-MBX-APIKEY': apiKey },
     })
 
@@ -652,67 +803,71 @@ export class BinanceAdapter implements ExchangeAdapter {
   }
 
   async fetchOpenPositions(credentials: ExchangeCredentials): Promise<UnrealizedPosition[]> {
-    const timestamp = Date.now()
-    const queryString = `timestamp=${timestamp}`
-    const signature = sign(queryString, credentials.apiSecret)
+    return this.withProxy(credentials, async () => {
+      const timestamp = Date.now()
+      const queryString = `timestamp=${timestamp}`
+      const signature = sign(queryString, credentials.apiSecret)
 
-    const response = await fetchWithRetry(
-      `${FUTURES_URL}/fapi/v2/positionRisk?${queryString}&signature=${signature}`,
-      { headers: { 'X-MBX-APIKEY': credentials.apiKey } }
-    )
+      const response = await this.fetchWithRetry(
+        `${FUTURES_URL}/fapi/v2/positionRisk?${queryString}&signature=${signature}`,
+        { headers: { 'X-MBX-APIKEY': credentials.apiKey } }
+      )
 
-    if (!response.ok) return []
+      if (!response.ok) return []
 
-    const data = (await response.json()) as BinancePositionRisk[]
-    return data
-      .filter((position) => Math.abs(parseFloat(position.positionAmt)) > 0)
-      .map((position) => ({
-        symbol: position.symbol,
-        side: parseFloat(position.positionAmt) >= 0 ? 'long' : 'short',
-        size: Math.abs(parseFloat(position.positionAmt)),
-        entryPrice: parseFloat(position.entryPrice),
-        markPrice: parseFloat(position.markPrice),
-        unrealizedPnl: parseFloat(position.unRealizedProfit),
-        leverage: parseFloat(position.leverage),
-        tradeType: 'futures',
-      }))
+      const data = (await response.json()) as BinancePositionRisk[]
+      return data
+        .filter((position) => Math.abs(parseFloat(position.positionAmt)) > 0)
+        .map((position) => ({
+          symbol: position.symbol,
+          side: parseFloat(position.positionAmt) >= 0 ? 'long' : 'short',
+          size: Math.abs(parseFloat(position.positionAmt)),
+          entryPrice: parseFloat(position.entryPrice),
+          markPrice: parseFloat(position.markPrice),
+          unrealizedPnl: parseFloat(position.unRealizedProfit),
+          leverage: parseFloat(position.leverage),
+          tradeType: 'futures',
+        }))
+    })
   }
 
   async fetchBalances(credentials: ExchangeCredentials): Promise<AssetBalance[]> {
-    const timestamp = Date.now()
-    const queryString = `timestamp=${timestamp}`
-    const signature = sign(queryString, credentials.apiSecret)
+    return this.withProxy(credentials, async () => {
+      const timestamp = Date.now()
+      const queryString = `timestamp=${timestamp}`
+      const signature = sign(queryString, credentials.apiSecret)
 
-    const response = await fetchWithRetry(
-      `${BASE_URL}/api/v3/account?${queryString}&signature=${signature}`,
-      { headers: { 'X-MBX-APIKEY': credentials.apiKey } }
-    )
+      const response = await this.fetchWithRetry(
+        `${BASE_URL}/api/v3/account?${queryString}&signature=${signature}`,
+        { headers: { 'X-MBX-APIKEY': credentials.apiKey } }
+      )
 
-    if (!response.ok) return []
+      if (!response.ok) return []
 
-    const data = (await response.json()) as { balances: BinanceBalance[] }
-    const balances = data.balances
-      .map((balance) => {
-        const free = parseFloat(balance.free)
-        const locked = parseFloat(balance.locked)
-        const total = free + locked
-        return { asset: balance.asset, free, locked, total }
-      })
-      .filter((balance) => balance.total > 0)
+      const data = (await response.json()) as { balances: BinanceBalance[] }
+      const balances = data.balances
+        .map((balance) => {
+          const free = parseFloat(balance.free)
+          const locked = parseFloat(balance.locked)
+          const total = free + locked
+          return { asset: balance.asset, free, locked, total }
+        })
+        .filter((balance) => balance.total > 0)
 
-    const priced = await Promise.all(
-      balances.map(async (balance) => {
-        const usdPrice = await this.getUsdPrice(balance.asset)
-        return {
-          asset: balance.asset,
-          free: balance.free,
-          locked: balance.locked,
-          usdValue: balance.total * usdPrice,
-        } satisfies AssetBalance
-      })
-    )
+      const priced = await Promise.all(
+        balances.map(async (balance) => {
+          const usdPrice = await this.getUsdPrice(balance.asset)
+          return {
+            asset: balance.asset,
+            free: balance.free,
+            locked: balance.locked,
+            usdValue: balance.total * usdPrice,
+          } satisfies AssetBalance
+        })
+      )
 
-    return priced
+      return priced
+    })
   }
 
   private async getUsdPrice(asset: string): Promise<number> {
@@ -721,7 +876,7 @@ export class BinanceAdapter implements ExchangeAdapter {
 
     try {
       const symbol = `${asset}USDT`
-      const response = await fetchWithRetry(`${BASE_URL}/api/v3/ticker/price?symbol=${symbol}`)
+      const response = await this.fetchWithRetry(`${BASE_URL}/api/v3/ticker/price?symbol=${symbol}`)
       if (!response.ok) return 0
       const data = (await response.json()) as { price?: string }
       return data.price ? parseFloat(data.price) : 0

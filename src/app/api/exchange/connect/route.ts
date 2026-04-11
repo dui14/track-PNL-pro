@@ -43,7 +43,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const { exchange, apiKey, apiSecret, passphrase, label } = parsed.data
+  const { exchange, apiKey, apiSecret, passphrase, label, proxy } = parsed.data
 
   if (!process.env.ENCRYPTION_MASTER_KEY) {
     return NextResponse.json(
@@ -61,7 +61,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       apiKey,
       apiSecret,
       passphrase,
-      label
+      label,
+      proxy
     )
   } catch (error) {
     console.error('[exchange/connect] unexpected error:', error)
@@ -84,6 +85,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       CONFLICT: 409,
       PASSPHRASE_REQUIRED: 400,
       INVALID_API_KEY: 400,
+      EXCHANGE_REGION_BLOCKED: 400,
+      EXCHANGE_TIME_DRIFT: 400,
+      EXCHANGE_UNREACHABLE: 502,
       WITHDRAW_PERMISSION_DETECTED: 400,
       UNSUPPORTED_EXCHANGE: 400,
       INTERNAL_ERROR: 500,

@@ -215,6 +215,8 @@ function ConnectModal({
   apiKey,
   apiSecret,
   passphrase,
+  proxyEnabled,
+  proxyValue,
   isSubmitting,
   submitError,
   connectedExchanges,
@@ -223,6 +225,8 @@ function ConnectModal({
   onApiKeyChange,
   onApiSecretChange,
   onPassphraseChange,
+  onProxyEnabledChange,
+  onProxyValueChange,
   onNext,
   onBack,
   onClose,
@@ -234,6 +238,8 @@ function ConnectModal({
   apiKey: string
   apiSecret: string
   passphrase: string
+  proxyEnabled: boolean
+  proxyValue: string
   isSubmitting: boolean
   submitError: string | null
   connectedExchanges: string[]
@@ -242,6 +248,8 @@ function ConnectModal({
   onApiKeyChange: (v: string) => void
   onApiSecretChange: (v: string) => void
   onPassphraseChange: (v: string) => void
+  onProxyEnabledChange: (v: boolean) => void
+  onProxyValueChange: (v: string) => void
   onNext: () => void
   onBack: () => void
   onClose: () => void
@@ -251,6 +259,7 @@ function ConnectModal({
     EXCHANGE_OPTIONS.find((e) => e.id === selectedExchange)?.name ?? selectedExchange ?? ''
 
   const requiresPassphrase = selectedExchange === 'okx' || selectedExchange === 'bitget'
+  const supportsProxy = selectedExchange === 'binance' || selectedExchange === 'bybit'
 
   const canNext =
     step === 1
@@ -437,6 +446,41 @@ function ConnectModal({
                   />
                 </div>
               )}
+              {supportsProxy && (
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3 flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Use Proxy</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Enable if your production server region is blocked by exchange.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer group flex-shrink-0">
+                      <input
+                        className="sr-only peer"
+                        type="checkbox"
+                        checked={proxyEnabled}
+                        onChange={(event) => onProxyEnabledChange(event.target.checked)}
+                      />
+                      <div className="w-11 h-6 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary" />
+                    </label>
+                  </div>
+                  {proxyEnabled && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Proxy</label>
+                      <input
+                        type="text"
+                        value={proxyValue}
+                        onChange={(event) => onProxyValueChange(event.target.value)}
+                        placeholder="host:port:user:pass or http://user:pass@host:port"
+                        autoComplete="off"
+                        spellCheck={false}
+                        className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-primary focus:border-primary transition-all outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 flex gap-2 text-amber-600 dark:text-amber-400">
                 <span className="material-symbols-outlined text-[16px] flex-shrink-0 mt-0.5">shield_lock</span>
                 <p className="text-xs">
@@ -595,6 +639,8 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
   const [apiKey, setApiKey] = useState('')
   const [apiSecret, setApiSecret] = useState('')
   const [passphrase, setPassphrase] = useState('')
+  const [proxyEnabled, setProxyEnabled] = useState(false)
+  const [proxyValue, setProxyValue] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -627,6 +673,8 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
     setApiKey('')
     setApiSecret('')
     setPassphrase('')
+    setProxyEnabled(false)
+    setProxyValue('')
     setSubmitError(null)
     setModalOpen(true)
   }
@@ -639,6 +687,8 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
     setApiKey('')
     setApiSecret('')
     setPassphrase('')
+    setProxyEnabled(false)
+    setProxyValue('')
     setSubmitError(null)
     setStep(2)
     setModalOpen(true)
@@ -652,6 +702,8 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
     setApiKey('')
     setApiSecret('')
     setPassphrase('')
+    setProxyEnabled(false)
+    setProxyValue('')
     setSubmitError(null)
   }
 
@@ -662,11 +714,16 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
     }
     if (step === 2) {
       const requiresPassphrase = selectedExchange === 'okx' || selectedExchange === 'bitget'
+      const supportsProxy = selectedExchange === 'binance' || selectedExchange === 'bybit'
       if (!selectedExchange || !apiKey.trim() || !apiSecret.trim() || (requiresPassphrase && !passphrase.trim())) return
       setIsSubmitting(true)
       setSubmitError(null)
       try {
         let res: Response
+        const proxyPayload =
+          supportsProxy && proxyEnabled && proxyValue.trim().length > 0
+            ? proxyValue.trim()
+            : undefined
         if (modalMode === 'edit' && editAccountId) {
           res = await fetch(`/api/exchange/accounts/${editAccountId}`, {
             method: 'PUT',
@@ -675,6 +732,7 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
               apiKey: apiKey.trim(),
               apiSecret: apiSecret.trim(),
               passphrase: passphrase.trim() || undefined,
+              proxy: proxyPayload,
               label: label.trim() || null,
             }),
           })
@@ -687,6 +745,7 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
               apiKey: apiKey.trim(),
               apiSecret: apiSecret.trim(),
               passphrase: passphrase.trim() || undefined,
+              proxy: proxyPayload,
               label: label.trim() || null,
             }),
           })
@@ -701,6 +760,7 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
             INVALID_API_KEY: 'Invalid API key or secret. Please check your credentials.',
             EXCHANGE_REGION_BLOCKED: 'Exchange rejected this server IP/region. Please update exchange IP whitelist or change server region.',
             EXCHANGE_UNREACHABLE: 'Exchange is temporarily unreachable from server. Please retry in a few minutes.',
+            EXCHANGE_TIME_DRIFT: 'Server time is out of sync with exchange time. Please retry in a moment.',
             PASSPHRASE_REQUIRED: 'Passphrase is required for this exchange.',
             WITHDRAW_PERMISSION_DETECTED: 'Please use read-only API keys without withdrawal permission.',
             UNSUPPORTED_EXCHANGE: 'This exchange is not supported.',
@@ -847,6 +907,8 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
           apiKey={apiKey}
           apiSecret={apiSecret}
           passphrase={passphrase}
+          proxyEnabled={proxyEnabled}
+          proxyValue={proxyValue}
           isSubmitting={isSubmitting}
           submitError={submitError}
           connectedExchanges={connectedExchangeIds}
@@ -855,6 +917,8 @@ export function ExchangeIntegrationWizard(): React.JSX.Element {
           onApiKeyChange={setApiKey}
           onApiSecretChange={setApiSecret}
           onPassphraseChange={setPassphrase}
+          onProxyEnabledChange={setProxyEnabled}
+          onProxyValueChange={setProxyValue}
           onNext={handleNext}
           onBack={handleBack}
           onClose={closeModal}

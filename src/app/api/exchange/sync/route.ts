@@ -42,6 +42,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ACCOUNT_INACTIVE: 400,
       API_KEY_NOT_FOUND: 404,
       DECRYPTION_FAILED: 500,
+      EXCHANGE_REGION_BLOCKED: 502,
+      EXCHANGE_UNREACHABLE: 502,
+      EXCHANGE_TIME_DRIFT: 400,
       EXCHANGE_ERROR: 502,
       INTERNAL_ERROR: 500,
     }
