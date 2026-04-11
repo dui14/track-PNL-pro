@@ -56,8 +56,12 @@ CREATE TABLE api_keys (
   exchange_account_id UUID NOT NULL REFERENCES exchange_accounts(id) ON DELETE CASCADE,
   key_encrypted       TEXT NOT NULL,
   secret_encrypted    TEXT NOT NULL,
+  passphrase_encrypted TEXT,
+  proxy_encrypted     TEXT,
   key_iv              TEXT NOT NULL,
   secret_iv           TEXT NOT NULL,
+  passphrase_iv       TEXT,
+  proxy_iv            TEXT,
   key_version         INT NOT NULL DEFAULT 1,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
