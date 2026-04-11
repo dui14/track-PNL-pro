@@ -5,7 +5,6 @@ import type {
   AssetBalance,
   UnrealizedPosition,
 } from '@/lib/types'
-import { fetchExchange } from './httpClient'
 import type { ExchangeAdapter } from './exchangeFactory'
 
 const BASE_URL = 'https://api.bybit.com'
@@ -23,7 +22,7 @@ async function fetchWithTimeout(url: string, options?: RequestInit): Promise<Res
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
   try {
-    return await fetchExchange(url, { ...options, signal: controller.signal })
+    return await fetch(url, { ...options, signal: controller.signal })
   } finally {
     clearTimeout(timer)
   }
@@ -58,15 +57,44 @@ export class BybitAdapter implements ExchangeAdapter {
 
   async validateCredentials(credentials: ExchangeCredentials): Promise<boolean> {
     try {
-      const queryString = 'accountType=UNIFIED'
-      const headers = this.buildHeaders(credentials, queryString)
-      const response = await fetchWithRetry(`${BASE_URL}/v5/account/wallet-balance?${queryString}`, { headers })
-      if (!response.ok) return false
-      const data = (await response.json()) as { retCode: number }
-      return data.retCode === 0
+      const queryApiOk = await this.verifyQueryApi(credentials)
+      if (queryApiOk) return true
+
+      const accountTypes = ['UNIFIED', 'SPOT', 'CONTRACT'] as const
+      for (const accountType of accountTypes) {
+        const walletBalanceOk = await this.verifyWalletBalance(credentials, accountType)
+        if (walletBalanceOk) return true
+      }
+
+      return false
     } catch {
       return false
     }
+  }
+
+  private async verifyQueryApi(credentials: ExchangeCredentials): Promise<boolean> {
+    const queryString = ''
+    const headers = this.buildHeaders(credentials, queryString)
+    const response = await fetchWithRetry(`${BASE_URL}/v5/user/query-api`, { headers })
+    if (!response.ok) return false
+
+    const data = (await response.json()) as { retCode: number }
+    return data.retCode === 0
+  }
+
+  private async verifyWalletBalance(
+    credentials: ExchangeCredentials,
+    accountType: 'UNIFIED' | 'SPOT' | 'CONTRACT'
+  ): Promise<boolean> {
+    const queryString = `accountType=${encodeURIComponent(accountType)}`
+    const headers = this.buildHeaders(credentials, queryString)
+    const response = await fetchWithRetry(`${BASE_URL}/v5/account/wallet-balance?${queryString}`, {
+      headers,
+    })
+    if (!response.ok) return false
+
+    const data = (await response.json()) as { retCode: number }
+    return data.retCode === 0
   }
 
   async hasWithdrawPermission(credentials: ExchangeCredentials): Promise<boolean> {

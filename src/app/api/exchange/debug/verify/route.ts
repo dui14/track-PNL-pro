@@ -1,18 +1,10 @@
 import { createHash, createHmac } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { ProxyAgent } from 'undici'
 import { signOkxRequest } from '@/lib/adapters/okxApi'
 import {
   ExchangeDebugVerifySchema,
   type ExchangeDebugVerifyInput,
 } from '@/lib/validators/exchangeDebug'
-
-type ProxyConfig = {
-  proxy?: string
-  proxyUrl?: string
-  proxyUsername?: string
-  proxyPassword?: string
-}
 
 type DebugVerifyResult = {
   ok: boolean
@@ -82,71 +74,23 @@ function normalizeBaseUrl(input: string | undefined, fallback: string): string {
   return raw.replace(/\/+$/, '')
 }
 
-function isValidProxyFormat(value: string): boolean {
-  return /^https?:\/\//i.test(value) || /^[^:\s]+:\d+(?::[^:\s]+(?::.+)?)?$/.test(value)
-}
-
-function resolveProxyUrl(config: ProxyConfig): string | null {
-  const rawProxy = config.proxy?.trim()
-  const rawProxyUrl = config.proxyUrl?.trim()
-  const candidate = rawProxy || rawProxyUrl
-  if (!candidate) return null
-  if (!isValidProxyFormat(candidate)) return null
-
-  if (rawProxy && !rawProxy.includes('://')) {
-    const parts = rawProxy.split(':')
-    if (parts.length >= 2) {
-      const host = parts[0]
-      const port = parts[1]
-      const username = parts.length >= 3 ? parts[2] : config.proxyUsername?.trim()
-      const password = parts.length >= 4 ? parts.slice(3).join(':') : config.proxyPassword?.trim()
-
-      const parsed = new URL(`http://${host}:${port}`)
-      if (username) parsed.username = username
-      if (password) parsed.password = password
-      return parsed.toString()
-    }
-  }
-
-  const parsed = new URL(candidate.includes('://') ? candidate : `http://${candidate}`)
-  const username = config.proxyUsername?.trim()
-  const password = config.proxyPassword?.trim()
-  if (username) parsed.username = username
-  if (password) parsed.password = password
-  return parsed.toString()
-}
-
 async function fetchJson(
   url: string,
-  init: RequestInit,
-  proxyConfig?: ProxyConfig
+  init: RequestInit
 ): Promise<{ status: number; ok: boolean; body: unknown }> {
-  const proxyUrl = proxyConfig ? resolveProxyUrl(proxyConfig) : null
-  const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : null
+  const response = await fetch(url, init)
+  const text = await response.text()
+  let body: unknown = null
   try {
-    const requestInit = {
-      ...init,
-      ...(dispatcher ? { dispatcher } : {}),
-    } as RequestInit
+    body = text ? JSON.parse(text) : null
+  } catch {
+    body = text
+  }
 
-    const response = await fetch(url, requestInit)
-    const text = await response.text()
-    let body: unknown = null
-    try {
-      body = text ? JSON.parse(text) : null
-    } catch {
-      body = text
-    }
-
-    return {
-      status: response.status,
-      ok: response.ok,
-      body,
-    }
-  } finally {
-    if (dispatcher) {
-      await dispatcher.close()
-    }
+  return {
+    status: response.status,
+    ok: response.ok,
+    body,
   }
 }
 
@@ -174,8 +118,7 @@ async function verifyBinance(input: ExchangeDebugVerifyInput): Promise<DebugVeri
         'X-MBX-APIKEY': input.apiKey,
       },
       cache: 'no-store',
-    },
-    input
+    }
   )
 
   const record = asRecord(body)
@@ -212,8 +155,7 @@ async function verifyOkx(input: ExchangeDebugVerifyInput): Promise<DebugVerifyRe
         'OK-ACCESS-PASSPHRASE': input.passphrase ?? '',
       },
       cache: 'no-store',
-    },
-    input
+    }
   )
 
   const record = asRecord(body)
@@ -251,8 +193,7 @@ async function verifyBybit(input: ExchangeDebugVerifyInput): Promise<DebugVerify
         'X-BAPI-RECV-WINDOW': String(recvWindow),
       },
       cache: 'no-store',
-    },
-    input
+    }
   )
 
   const record = asRecord(body)
@@ -287,8 +228,7 @@ async function verifyBitget(input: ExchangeDebugVerifyInput): Promise<DebugVerif
         'Content-Type': 'application/json',
       },
       cache: 'no-store',
-    },
-    input
+    }
   )
 
   const record = asRecord(body)
@@ -330,8 +270,7 @@ async function verifyGateio(input: ExchangeDebugVerifyInput): Promise<DebugVerif
         Accept: 'application/json',
       },
       cache: 'no-store',
-    },
-    input
+    }
   )
 
   const record = asRecord(body)
@@ -362,11 +301,11 @@ async function verifyGateio(input: ExchangeDebugVerifyInput): Promise<DebugVerif
 function buildHints(exchange: string, result: DebugVerifyResult): string[] {
   const hints: string[] = []
   if (exchange === 'binance' && result.upstreamStatus === 451) {
-    hints.push('Binance chan theo khu vuc IP server. Thu doi region Render hoac cau hinh EXCHANGE_PROXY_URL.')
+    hints.push('Binance chan theo khu vuc IP server. Thu doi region server hoac cap nhat IP whitelist tren san.')
   }
 
   if (exchange === 'bybit' && result.upstreamStatus === 403) {
-    hints.push('Bybit tu choi IP server. Kiem tra IP whitelist hoac su dung EXCHANGE_PROXY_URL.')
+    hints.push('Bybit tu choi IP server. Kiem tra IP whitelist hoac doi region server.')
   }
 
   if (result.upstreamStatus === 401 || result.upstreamStatus === 403) {
@@ -406,7 +345,7 @@ function buildHints(exchange: string, result: DebugVerifyResult): string[] {
   }
 
   if (result.upstreamStatus >= 500) {
-    hints.push('Loi ket noi upstream. Neu co IP whitelist, hay thu cau hinh proxy backend.')
+    hints.push('Loi ket noi upstream. Thu lai sau it phut va kiem tra outbound network cua server.')
   }
 
   if (!result.ok && hints.length === 0) {

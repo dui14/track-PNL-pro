@@ -5,7 +5,6 @@ import type {
   AssetBalance,
   UnrealizedPosition,
 } from '@/lib/types'
-import { fetchExchange } from './httpClient'
 import type { ExchangeAdapter } from './exchangeFactory'
 
 const BASE_URL = 'https://api.binance.com'
@@ -41,7 +40,7 @@ async function fetchWithTimeout(url: string, options?: RequestInit): Promise<Res
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
   try {
-    const response = await fetchExchange(url, { ...options, signal: controller.signal })
+    const response = await fetch(url, { ...options, signal: controller.signal })
     return response
   } finally {
     clearTimeout(timer)
@@ -80,9 +79,12 @@ export class BinanceAdapter implements ExchangeAdapter {
       const restrictions = await this.fetchApiRestrictions(credentials)
       if (restrictions.ok) return true
 
-      const response = await this.fetchSignedAccount(credentials)
+      const [spotAccountResponse, futuresAccountResponse] = await Promise.all([
+        this.fetchSignedAccount(credentials),
+        this.fetchSignedFuturesAccount(credentials),
+      ])
 
-      return response.ok
+      return spotAccountResponse.ok || futuresAccountResponse.ok
     } catch {
       return false
     }
@@ -122,6 +124,19 @@ export class BinanceAdapter implements ExchangeAdapter {
     params.append('signature', sign(params.toString(), credentials.apiSecret))
 
     return fetchWithRetry(`${BASE_URL}/api/v3/account?${params.toString()}`, {
+      headers: { 'X-MBX-APIKEY': credentials.apiKey },
+    })
+  }
+
+  private async fetchSignedFuturesAccount(credentials: ExchangeCredentials): Promise<Response> {
+    const timestamp = Date.now()
+    const params = new URLSearchParams({
+      timestamp: String(timestamp),
+      recvWindow: String(RECV_WINDOW),
+    })
+    params.append('signature', sign(params.toString(), credentials.apiSecret))
+
+    return fetchWithRetry(`${FUTURES_URL}/fapi/v2/account?${params.toString()}`, {
       headers: { 'X-MBX-APIKEY': credentials.apiKey },
     })
   }
