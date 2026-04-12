@@ -37,10 +37,20 @@ function IconRight(): React.JSX.Element {
   )
 }
 
-function formatPNL(pnl: number): string {
-  const abs = Math.abs(pnl).toFixed(4)
-  if (pnl > 0) return `+${abs} USDT`
-  if (pnl < 0) return `-${abs} USDT`
+function formatPNL(pnl: number, compact = false): string {
+  const abs = Math.abs(pnl)
+
+  if (compact) {
+    const digits = abs >= 100 ? 0 : abs >= 1 ? 2 : 4
+    const value = abs.toFixed(digits)
+    if (pnl > 0) return `+${value}`
+    if (pnl < 0) return `-${value}`
+    return '0'
+  }
+
+  const full = abs.toFixed(4)
+  if (pnl > 0) return `+${full} USDT`
+  if (pnl < 0) return `-${full} USDT`
   return `0.0000 USDT`
 }
 
@@ -215,32 +225,34 @@ export function PNLCalendar({ segment, exchange }: PNLCalendarProps): React.JSX.
   const calendarRows = view === 'daily' ? buildRows() : []
 
   return (
-    <div className="bg-background-light dark:bg-background-dark p-6 rounded-xl border border-slate-200 dark:border-primary/20 shadow-sm relative">
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-        <div className="flex gap-2">
-          <button
-            onClick={() => handleViewChange('daily')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-full transition-colors ${
-              view === 'daily'
-                ? 'bg-primary/20 text-primary border border-primary/40'
-                : 'text-slate-500 hover:text-slate-300 border border-transparent'
-            }`}
-          >
-            Lợi nhuận hàng ngày
-          </button>
-          <button
-            onClick={() => handleViewChange('monthly')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-full transition-colors ${
-              view === 'monthly'
-                ? 'bg-primary/20 text-primary border border-primary/40'
-                : 'text-slate-500 hover:text-slate-300 border border-transparent'
-            }`}
-          >
-            Lợi nhuận hàng tháng
-          </button>
+    <div className="bg-background-light dark:bg-background-dark p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-primary/20 shadow-sm relative">
+      <div className="flex flex-col gap-3 mb-5">
+        <div className="w-full overflow-x-auto">
+          <div className="inline-flex gap-2">
+            <button
+              onClick={() => handleViewChange('daily')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-full transition-colors shrink-0 ${
+                view === 'daily'
+                  ? 'bg-primary/20 text-primary border border-primary/40'
+                  : 'text-slate-500 hover:text-slate-300 border border-transparent'
+              }`}
+            >
+              Lợi nhuận hàng ngày
+            </button>
+            <button
+              onClick={() => handleViewChange('monthly')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-full transition-colors shrink-0 ${
+                view === 'monthly'
+                  ? 'bg-primary/20 text-primary border border-primary/40'
+                  : 'text-slate-500 hover:text-slate-300 border border-transparent'
+              }`}
+            >
+              Lợi nhuận hàng tháng
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3" onWheel={handlePeriodWheel}>
+        <div className="flex flex-wrap items-center justify-between gap-3" onWheel={handlePeriodWheel}>
           <button
             onClick={goBack}
             className="p-1.5 rounded hover:bg-primary/10 text-slate-400 hover:text-primary transition-colors"
@@ -248,7 +260,7 @@ export function PNLCalendar({ segment, exchange }: PNLCalendarProps): React.JSX.
           >
             <IconLeft />
           </button>
-          <span className="text-sm font-bold min-w-[110px] text-center">
+          <span className="text-sm font-bold min-w-[110px] text-center flex-1">
             {view === 'daily' ? `${MONTH_NAMES_VI[month - 1]} ${year}` : `Năm ${year}`}
           </span>
           <button
@@ -261,12 +273,12 @@ export function PNLCalendar({ segment, exchange }: PNLCalendarProps): React.JSX.
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {view === 'daily' && (
             <select
               value={month}
               onChange={handleMonthSelectChange}
-              className="h-8 rounded-lg border border-slate-200 dark:border-primary/20 bg-white dark:bg-background-dark px-2 text-xs font-semibold text-slate-700 dark:text-slate-200"
+              className="h-8 rounded-lg border border-slate-200 dark:border-primary/20 bg-white dark:bg-background-dark px-2 text-xs font-semibold text-slate-700 dark:text-slate-200 min-w-[110px]"
             >
               {MONTH_NAMES_VI.map((label, index) => {
                 const optionMonth = index + 1
@@ -282,7 +294,7 @@ export function PNLCalendar({ segment, exchange }: PNLCalendarProps): React.JSX.
           <select
             value={year}
             onChange={handleYearSelectChange}
-            className="h-8 rounded-lg border border-slate-200 dark:border-primary/20 bg-white dark:bg-background-dark px-2 text-xs font-semibold text-slate-700 dark:text-slate-200"
+            className="h-8 rounded-lg border border-slate-200 dark:border-primary/20 bg-white dark:bg-background-dark px-2 text-xs font-semibold text-slate-700 dark:text-slate-200 min-w-[90px]"
           >
             {yearOptions.map((optionYear) => (
               <option key={optionYear} value={optionYear}>
@@ -295,13 +307,13 @@ export function PNLCalendar({ segment, exchange }: PNLCalendarProps): React.JSX.
 
       {view === 'daily' && (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[560px]">
+          <table className="w-full border-collapse table-fixed min-w-[320px]">
             <thead>
               <tr>
                 {DAY_HEADERS.map((h) => (
                   <th
                     key={h}
-                    className="py-2 px-1 text-[11px] text-slate-500 font-bold text-center"
+                    className="py-2 px-1 text-[10px] sm:text-[11px] text-slate-500 font-bold text-center"
                   >
                     {h}
                   </th>
@@ -316,7 +328,7 @@ export function PNLCalendar({ segment, exchange }: PNLCalendarProps): React.JSX.
                       return (
                         <td
                           key={ci}
-                          className="border border-primary/5 bg-slate-900/20 h-14 w-[14.28%]"
+                          className="border border-primary/5 bg-slate-900/20 h-12 sm:h-14 w-[14.28%]"
                         />
                       )
                     }
@@ -326,7 +338,7 @@ export function PNLCalendar({ segment, exchange }: PNLCalendarProps): React.JSX.
                     return (
                       <td
                         key={ci}
-                        className={`border border-primary/5 h-14 w-[14.28%] align-top p-1.5 ${
+                        className={`border border-primary/5 h-12 sm:h-14 w-[14.28%] align-top p-1 ${
                           active
                             ? hasData
                               ? cell.pnl > 0
@@ -338,15 +350,15 @@ export function PNLCalendar({ segment, exchange }: PNLCalendarProps): React.JSX.
                             : 'bg-slate-900/10'
                         } transition-colors`}
                       >
-                        <p className="text-[11px] font-bold text-slate-400 leading-none mb-1">
+                        <p className="text-[10px] sm:text-[11px] font-bold text-slate-400 leading-none mb-1">
                           {dayNum}
                         </p>
                         {active ? (
-                          <span className={`text-[10px] font-mono font-bold ${pnlColor(cell.pnl, hasData)}`}>
-                            {hasData ? formatPNL(cell.pnl) : '0.0000 USDT'}
+                          <span className={`text-[9px] sm:text-[10px] font-mono font-bold leading-tight ${pnlColor(cell.pnl, hasData)}`}>
+                            {hasData ? formatPNL(cell.pnl, true) : '0'}
                           </span>
                         ) : (
-                          <span className="text-[10px] text-slate-600">--</span>
+                          <span className="text-[9px] sm:text-[10px] text-slate-600">--</span>
                         )}
                       </td>
                     )

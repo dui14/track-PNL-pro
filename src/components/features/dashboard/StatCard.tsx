@@ -20,14 +20,14 @@ export function StatCard({
   valueHighlight,
 }: StatCardProps): React.JSX.Element {
   return (
-    <div className="bg-background-light dark:bg-background-dark p-6 rounded-xl border border-slate-200 dark:border-primary/20 flex flex-col justify-between shadow-sm">
+    <div className="bg-background-light dark:bg-background-dark p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-primary/20 flex flex-col justify-between shadow-sm">
       <div className="flex justify-between items-start">
-        <p className="text-sm font-medium text-slate-500">{title}</p>
+        <p className="text-xs sm:text-sm font-medium text-slate-500 pr-3">{title}</p>
         <span className="material-symbols-outlined text-primary text-xl">{icon}</span>
       </div>
       <div className="mt-4">
         <h3
-          className={`text-2xl font-bold tracking-tight ${
+          className={`text-xl sm:text-2xl font-bold tracking-tight break-words ${
             valueHighlight ? 'text-accent' : ''
           }`}
         >
@@ -53,7 +53,7 @@ export function StatCard({
             />
           </div>
         )}
-        {note && <p className="text-sm text-slate-400 font-medium mt-1">{note}</p>}
+        {note && <p className="text-xs sm:text-sm text-slate-400 font-medium mt-2 whitespace-pre-line leading-relaxed break-words">{note}</p>}
       </div>
     </div>
   )

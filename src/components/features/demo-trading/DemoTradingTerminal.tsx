@@ -470,15 +470,15 @@ export function DemoTradingTerminal(): React.JSX.Element {
   }
 
   return (
-    <div className="flex flex-1 h-full overflow-hidden">
-      <section className="flex-1 flex flex-col min-w-0 bg-background-dark">
-        <div className="relative h-12 border-b border-primary/10 flex items-center px-4 gap-6 shrink-0 bg-panel-dark/50">
+    <div className="flex flex-1 h-full overflow-hidden flex-col xl:flex-row">
+      <section className="flex-1 flex flex-col min-w-0 min-h-0 bg-background-dark">
+        <div className="relative min-h-12 border-b border-primary/10 flex items-center px-3 md:px-4 gap-3 md:gap-6 shrink-0 bg-panel-dark/50 flex-wrap md:flex-nowrap py-2 md:py-0">
           <div ref={pairPickerRef} className="relative flex items-center gap-2">
             <button
               onClick={() => setIsPairPickerOpen((prev) => !prev)}
               className="group inline-flex items-center gap-1 rounded-md border border-primary/20 px-2 py-1 hover:border-primary/40 hover:bg-primary/5 transition-colors"
             >
-              <span className="font-bold text-lg leading-none">{selectedPair.replace('/', ' / ')}</span>
+              <span className="font-bold text-base md:text-lg leading-none">{selectedPair.replace('/', ' / ')}</span>
               <span className="material-symbols-outlined text-base text-slate-400 group-hover:text-primary">
                 {isPairPickerOpen ? 'expand_less' : 'expand_more'}
               </span>
@@ -488,7 +488,7 @@ export function DemoTradingTerminal(): React.JSX.Element {
             </span>
 
             {isPairPickerOpen && (
-              <div className="absolute left-0 top-[calc(100%+8px)] z-40 w-[490px] max-w-[calc(100vw-360px)] min-w-[280px] rounded-lg border border-primary/20 bg-[#202630] shadow-2xl">
+              <div className="absolute left-0 top-[calc(100%+8px)] z-40 w-[490px] max-w-[calc(100vw-2rem)] min-w-[280px] rounded-lg border border-primary/20 bg-[#202630] shadow-2xl">
                 <div className="p-4 pb-2">
                   <div className="relative mb-3">
                     <span className="material-symbols-outlined absolute left-2 top-1.5 text-slate-500 text-lg">
@@ -583,12 +583,12 @@ export function DemoTradingTerminal(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="flex-1 relative overflow-hidden">
+        <div className="relative overflow-hidden h-[42vh] min-h-[260px] xl:flex-1 xl:h-auto">
           <div id={TV_CONTAINER_ID} className="w-full h-full" />
         </div>
 
-        <div className="h-52 border-t border-primary/10 flex flex-col shrink-0 bg-panel-dark">
-          <div className="flex border-b border-primary/10 shrink-0">
+        <div className="h-64 md:h-52 border-t border-primary/10 flex flex-col shrink-0 bg-panel-dark">
+          <div className="flex border-b border-primary/10 shrink-0 overflow-x-auto">
             {(
               [
                 { key: 'positions', label: `Vị thế mở (${openPositions.length})` },
@@ -612,7 +612,7 @@ export function DemoTradingTerminal(): React.JSX.Element {
 
           <div className="flex-1 overflow-auto">
             {bottomTab === 'positions' && openPositions.length > 0 && (
-              <table className="w-full text-left text-[11px]">
+              <table className="w-full min-w-[1100px] text-left text-[11px]">
                 <thead className="text-slate-500 border-b border-primary/5 sticky top-0 bg-panel-dark">
                   <tr>
                     <th className="p-2">Symbol</th>
@@ -691,7 +691,7 @@ export function DemoTradingTerminal(): React.JSX.Element {
             )}
 
             {bottomTab === 'orderHistory' && orderHistory.length > 0 && (
-              <table className="w-full text-left text-[11px]">
+              <table className="w-full min-w-[1240px] text-left text-[11px]">
                 <thead className="text-slate-500 border-b border-primary/5 sticky top-0 bg-panel-dark">
                   <tr>
                     <th className="p-2">Symbol</th>
@@ -769,7 +769,7 @@ export function DemoTradingTerminal(): React.JSX.Element {
             {bottomTab === 'tradeHistory' && (
               <>
                 {[...openPositions, ...closedTrades].length > 0 ? (
-                  <table className="w-full text-left text-[11px]">
+                  <table className="w-full min-w-[900px] text-left text-[11px]">
                     <thead className="text-slate-500 border-b border-primary/5 sticky top-0 bg-panel-dark">
                       <tr>
                         <th className="p-2">Symbol</th>
@@ -828,7 +828,7 @@ export function DemoTradingTerminal(): React.JSX.Element {
         </div>
       </section>
 
-      <aside className="w-72 border-l border-primary/10 bg-background-light dark:bg-background-dark flex flex-col shrink-0">
+      <aside className="w-full xl:w-72 border-t xl:border-t-0 xl:border-l border-primary/10 bg-background-light dark:bg-background-dark flex flex-col shrink-0 max-h-[58vh] xl:max-h-none">
         <div className="flex p-2 gap-2 border-b border-primary/10 bg-panel-dark/30">
           <button
             onClick={() => setOrderSide('buy')}

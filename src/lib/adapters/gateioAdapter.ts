@@ -80,6 +80,8 @@ async function fetchWithRetry(url: string, options?: RequestInit, attempt = 0): 
 }
 
 export class GateioAdapter implements ExchangeAdapter {
+  private futuresContractSpecsBySettle = new Map<string, Map<string, GateFuturesContractSpec>>()
+
   private buildHeaders(
     credentials: ExchangeCredentials,
     method: GateHttpMethod,
@@ -146,6 +148,7 @@ export class GateioAdapter implements ExchangeAdapter {
     const positions: UnrealizedPosition[] = []
 
     for (const settle of settles) {
+      const futuresContractSpecs = await this.getFuturesContractSpecs(settle)
       const requestPath = `/futures/${settle}/positions`
       const headers = this.buildHeaders(credentials, 'GET', requestPath)
       const response = await fetchWithRetry(`${BASE_URL}${requestPath}`, {
@@ -174,7 +177,7 @@ export class GateioAdapter implements ExchangeAdapter {
         positions.push({
           symbol,
           side: sizeRaw < 0 ? 'short' : 'long',
-          size: Math.abs(sizeRaw),
+          size: this.normalizeFuturesQuantity(sizeRaw, row.contract, futuresContractSpecs),
           entryPrice,
           markPrice,
           unrealizedPnl,
@@ -278,6 +281,7 @@ export class GateioAdapter implements ExchangeAdapter {
     const startSec = Math.floor(startMs / 1000)
 
     for (const settle of settles) {
+      const futuresContractSpecs = await this.getFuturesContractSpecs(settle)
       let windowStartSec = startSec
       while (windowStartSec <= nowSec) {
         const windowEndSec = Math.min(windowStartSec + GATE_MAX_WINDOW_SECONDS - 1, nowSec)
@@ -303,7 +307,11 @@ export class GateioAdapter implements ExchangeAdapter {
           const pageTrades = data as GateFuturesTrade[]
           if (pageTrades.length === 0) break
 
-          allTrades.push(...pageTrades.map((trade) => this.normalizeFuturesTrade(trade)))
+          allTrades.push(
+            ...pageTrades.map((trade) =>
+              this.normalizeFuturesTrade(trade, settle, futuresContractSpecs)
+            )
+          )
 
           if (pageTrades.length < 100) break
           await sleep(60)
@@ -396,7 +404,11 @@ export class GateioAdapter implements ExchangeAdapter {
     }
   }
 
-  private normalizeFuturesTrade(trade: GateFuturesTrade): ExchangeAdapterTrade {
+  private normalizeFuturesTrade(
+    trade: GateFuturesTrade,
+    settle: string,
+    futuresContractSpecs: Map<string, GateFuturesContractSpec>
+  ): ExchangeAdapterTrade {
     const rawSize = asNumber(trade.size ?? trade.qty)
     const sideFromSize: 'buy' | 'sell' = rawSize < 0 ? 'sell' : 'buy'
     const sideField = typeof trade.side === 'string' ? trade.side.toLowerCase() : ''
@@ -409,10 +421,10 @@ export class GateioAdapter implements ExchangeAdapter {
       external_trade_id: externalTradeId,
       symbol: normalizeSymbol(trade.contract),
       side,
-      quantity: Math.abs(rawSize),
+      quantity: this.normalizeFuturesQuantity(rawSize, trade.contract, futuresContractSpecs),
       price: asNumber(trade.price),
       fee: Math.abs(asNumber(trade.fee)),
-      fee_currency: (trade.fee_currency ?? trade.settle ?? 'USDT').toUpperCase(),
+      fee_currency: (trade.fee_currency ?? settle ?? trade.settle ?? 'USDT').toUpperCase(),
       realized_pnl: asNullableNumber(trade.pnl),
       funding_fee: 0,
       income_type: 'fill_history',
@@ -420,6 +432,74 @@ export class GateioAdapter implements ExchangeAdapter {
       traded_at: toIsoFromGateTimestamp(trade.create_time_ms ?? trade.create_time),
       raw_data: trade as unknown as Record<string, unknown>,
     }
+  }
+
+  private async getFuturesContractSpecs(
+    settle: string
+  ): Promise<Map<string, GateFuturesContractSpec>> {
+    const settleKey = settle.toLowerCase()
+    const cached = this.futuresContractSpecsBySettle.get(settleKey)
+    if (cached) {
+      return cached
+    }
+
+    const requestPath = `/futures/${settleKey}/contracts`
+    const response = await fetchWithRetry(`${BASE_URL}${requestPath}`, {
+      method: 'GET',
+    })
+
+    const specs = new Map<string, GateFuturesContractSpec>()
+    if (!response.ok) {
+      this.futuresContractSpecsBySettle.set(settleKey, specs)
+      return specs
+    }
+
+    const data = (await response.json()) as unknown
+    if (!Array.isArray(data)) {
+      this.futuresContractSpecsBySettle.set(settleKey, specs)
+      return specs
+    }
+
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const row = item as GateFuturesContract
+      const contractName = String(row.name ?? '').toUpperCase()
+      if (!contractName) continue
+
+      const multiplierRaw = asNumber(row.quanto_multiplier ?? row.multiplier)
+      const multiplier = Number.isFinite(multiplierRaw) ? Math.abs(multiplierRaw) : 0
+      if (multiplier <= 0) continue
+
+      specs.set(contractName, {
+        multiplier,
+      })
+    }
+
+    this.futuresContractSpecsBySettle.set(settleKey, specs)
+    return specs
+  }
+
+  private normalizeFuturesQuantity(
+    rawSize: number,
+    contract: string | undefined,
+    futuresContractSpecs: Map<string, GateFuturesContractSpec>
+  ): number {
+    const size = Number.isFinite(rawSize) ? Math.abs(rawSize) : 0
+    if (size === 0) {
+      return 0
+    }
+
+    const contractName = String(contract ?? '').toUpperCase()
+    if (!contractName) {
+      return size
+    }
+
+    const multiplier = futuresContractSpecs.get(contractName)?.multiplier ?? 0
+    if (!(multiplier > 0)) {
+      return size
+    }
+
+    return size * multiplier
   }
 
   private normalizePositionCloseEvent(trade: GatePositionClose): ExchangeAdapterTrade | null {
@@ -549,4 +629,14 @@ type GateFuturesPosition = {
   unrealised_pnl?: string
   unrealized_pnl?: string
   leverage?: string
+}
+
+type GateFuturesContract = {
+  name?: string
+  quanto_multiplier?: string
+  multiplier?: string
+}
+
+type GateFuturesContractSpec = {
+  multiplier: number
 }

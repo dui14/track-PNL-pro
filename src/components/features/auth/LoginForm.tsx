@@ -80,7 +80,7 @@ export function LoginForm(): React.JSX.Element {
   }
 
   return (
-    <div className="relative w-full max-w-md p-6">
+    <div className="relative w-full max-w-md p-6 overflow-hidden">
       <div className="absolute -top-24 -left-24 w-64 h-64 bg-primary/20 rounded-full blur-[100px]" />
       <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-primary/10 rounded-full blur-[100px]" />
 
@@ -114,7 +114,7 @@ export function LoginForm(): React.JSX.Element {
           </div>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" autoComplete="off">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" autoComplete="on">
           {authError && (
             <div className="rounded-lg bg-rose-500/10 border border-rose-500/20 px-4 py-3 text-sm text-rose-400">
               {authError}
@@ -136,7 +136,7 @@ export function LoginForm(): React.JSX.Element {
                 id="email"
                 type="email"
                 placeholder="name@company.com"
-                autoComplete="off"
+                autoComplete="email"
                 className="block w-full pl-10 pr-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600"
               />
             </div>
@@ -161,7 +161,7 @@ export function LoginForm(): React.JSX.Element {
                 id="password"
                 type="password"
                 placeholder="••••••••"
-                autoComplete="new-password"
+                autoComplete="current-password"
                 className="block w-full pl-10 pr-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:ring-1 focus:ring-primary focus:border-primary transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600"
               />
             </div>
@@ -208,12 +208,6 @@ export function LoginForm(): React.JSX.Element {
             Create an account
           </Link>
         </p>
-      </div>
-
-      <div className="mt-8 flex justify-center gap-6 text-slate-500 dark:text-slate-600 text-xs">
-        <Link href="/privacy" className="hover:text-slate-300 transition-colors">Privacy Policy</Link>
-        <Link href="/terms" className="hover:text-slate-300 transition-colors">Terms of Service</Link>
-        <Link href="/support" className="hover:text-slate-300 transition-colors">Support</Link>
       </div>
     </div>
   )

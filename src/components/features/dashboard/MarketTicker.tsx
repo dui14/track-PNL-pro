@@ -106,11 +106,11 @@ export function MarketTicker(): React.JSX.Element {
   const items = TRACKED_PAIRS.map((p) => tickers.get(p.symbol)!)
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-1">
+    <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">
       {items.map((t) => (
         <div
           key={t.symbol}
-          className="flex-shrink-0 bg-background-light dark:bg-background-dark border border-slate-200 dark:border-primary/20 rounded-xl px-4 py-3 min-w-[140px] shadow-sm"
+          className="flex-shrink-0 bg-background-light dark:bg-background-dark border border-slate-200 dark:border-primary/20 rounded-xl px-3 sm:px-4 py-3 min-w-[120px] sm:min-w-[140px] shadow-sm"
         >
           <div className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">{t.label}/USDT</div>
           <div className="text-sm font-bold tabular-nums">${t.price}</div>

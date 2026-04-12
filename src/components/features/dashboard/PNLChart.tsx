@@ -92,30 +92,32 @@ export function PNLChart({ segment, exchange }: PNLChartProps): React.JSX.Elemen
   const yDomain = getYDomain(points)
 
   return (
-    <div className="bg-background-light dark:bg-background-dark p-6 rounded-xl border border-slate-200 dark:border-primary/20 shadow-sm h-full">
-      <div className="flex items-center justify-between mb-6">
+    <div className="bg-background-light dark:bg-background-dark p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-primary/20 shadow-sm h-full">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h2 className="text-lg font-bold">Cumulative PNL Performance</h2>
           <p className="text-sm text-slate-500">Time on X-axis, USD on Y-axis, centered at $0</p>
         </div>
-        <div className="flex gap-2">
-          {CHART_RANGES.map((r) => (
-            <button
-              key={r.value}
-              onClick={() => setRange(r.value)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
-                range === r.value
-                  ? 'bg-primary/10 text-primary border border-primary/20'
-                  : 'hover:bg-slate-100 dark:hover:bg-primary/5 text-slate-400'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+        <div className="overflow-x-auto">
+          <div className="inline-flex gap-2">
+            {CHART_RANGES.map((r) => (
+              <button
+                key={r.value}
+                onClick={() => setRange(r.value)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors shrink-0 ${
+                  range === r.value
+                    ? 'bg-primary/10 text-primary border border-primary/20'
+                    : 'hover:bg-slate-100 dark:hover:bg-primary/5 text-slate-400'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="relative h-64 w-full">
+      <div className="relative h-56 sm:h-64 w-full">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center">
             <span className="material-symbols-outlined animate-spin text-primary/40 text-3xl">refresh</span>

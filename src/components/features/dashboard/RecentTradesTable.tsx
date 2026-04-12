@@ -187,12 +187,12 @@ export function RecentTradesTable({
 
   return (
     <div className="bg-background-light dark:bg-background-dark rounded-xl border border-slate-200 dark:border-primary/20 shadow-sm overflow-hidden">
-      <div className="p-6 border-b border-slate-200 dark:border-primary/20 flex items-center justify-between">
+      <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-primary/20 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-bold">Recent Executed Trades</h2>
           <p className="text-sm text-slate-500">Overview of your last transactions, max 50 trades</p>
         </div>
-        <div className="text-right">
+        <div className="text-left sm:text-right">
           <p className="text-xs text-slate-500 font-medium">
             {from === 0 ? '0 trades' : `${from}-${to} of ${totalCapped}`}
           </p>
@@ -200,29 +200,29 @@ export function RecentTradesTable({
         </div>
       </div>
 
-      <div className="px-6 py-4 border-b border-slate-200 dark:border-primary/20 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500">Exchange</span>
+      <div className="px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-primary/20 space-y-3">
+        <div className="flex items-center gap-2 overflow-x-auto">
+          <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 shrink-0">Exchange</span>
           {EXCHANGE_FILTERS.map((option) => (
             <button
               key={option}
               type="button"
               onClick={() => handleExchangeFilterChange(option)}
-              className={`px-3 h-8 rounded-full border text-xs font-bold transition-colors ${getExchangeTagClass(option, option === exchangeFilter)}`}
+              className={`px-3 h-8 rounded-full border text-xs font-bold transition-colors shrink-0 ${getExchangeTagClass(option, option === exchangeFilter)}`}
             >
               {getExchangeLabel(option)}
             </button>
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500">Type</span>
+        <div className="flex items-center gap-2 overflow-x-auto">
+          <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 shrink-0">Type</span>
           {(['all', 'spot', 'futures'] as const).map((option) => (
             <button
               key={option}
               type="button"
               onClick={() => setSegmentFilter(option)}
-              className={`px-3 h-8 rounded-full border text-xs font-bold transition-colors ${getTradeTypeTagClass(option, option === segmentFilter)}`}
+              className={`px-3 h-8 rounded-full border text-xs font-bold transition-colors shrink-0 ${getTradeTypeTagClass(option, option === segmentFilter)}`}
             >
               {getTradeTypeLabel(option)}
             </button>
@@ -230,7 +230,7 @@ export function RecentTradesTable({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div>
         {loading && (
           <div className="flex items-center justify-center py-16">
             <span className="material-symbols-outlined animate-spin text-primary/40 text-3xl">refresh</span>
@@ -243,71 +243,22 @@ export function RecentTradesTable({
           </div>
         )}
         {!loading && trades.length > 0 && (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 dark:bg-primary/5 text-slate-500 text-xs font-bold uppercase tracking-wider">
-                <th className="px-6 py-4">Asset</th>
-                <th className="px-6 py-4">Side</th>
-                <th className="px-6 py-4">Type</th>
-                <th className="px-6 py-4">Price</th>
-                <th className="px-6 py-4">Size / Value</th>
-                <th className="px-6 py-4 text-right">PNL</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-primary/10">
+          <>
+            <div className="md:hidden px-4 py-4 space-y-3">
               {trades.map((trade) => {
                 const pnl = trade.realized_pnl ?? 0
                 const pnlPositive = pnl >= 0
                 const value = trade.quantity * trade.price
                 const tradeExchange = normalizeExchange(trade.exchange)
                 const tradeSegment = mapTradeTypeToSegment(trade.trade_type)
+
                 return (
-                  <tr
-                    key={trade.id}
-                    className="hover:bg-slate-50 dark:hover:bg-primary/5 transition-colors"
-                  >
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-bold">{trade.symbol}</p>
-                      <p className="text-[10px] text-slate-400 font-medium uppercase">{formatDate(trade.traded_at)}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${getExchangeTagClass(tradeExchange, true)}`}>
-                          {getExchangeLabel(tradeExchange)}
-                        </span>
-                        {tradeSegment !== 'all' && (
-                          <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${getTradeTypeTagClass(tradeSegment, true)}`}>
-                            {getTradeTypeLabel(tradeSegment)}
-                          </span>
-                        )}
+                  <div key={trade.id} className="rounded-lg border border-slate-200 dark:border-primary/15 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold">{trade.symbol}</p>
+                        <p className="text-[10px] text-slate-400 font-medium uppercase">{formatDate(trade.traded_at)}</p>
                       </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tighter ${
-                          trade.side === 'buy'
-                            ? 'bg-emerald-500/10 text-emerald-500'
-                            : 'bg-rose-500/10 text-rose-500'
-                        }`}
-                      >
-                        {trade.side}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {tradeSegment === 'all' ? (
-                        <span className="text-xs text-slate-500 font-medium capitalize">{trade.trade_type}</span>
-                      ) : (
-                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${getTradeTypeTagClass(tradeSegment, true)}`}>
-                          {getTradeTypeLabel(tradeSegment)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-sm font-medium font-mono">
-                      ${formatNumber(trade.price)}
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-bold font-mono">{formatNumber(trade.quantity, 4)}</p>
-                      <p className="text-xs text-slate-400 font-mono">${formatNumber(value)}</p>
-                    </td>
-                    <td className="px-6 py-4 text-right">
                       {trade.realized_pnl !== null ? (
                         <p className={`text-sm font-bold font-mono ${pnlPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
                           {pnlPositive ? '+' : ''}${formatNumber(pnl)}
@@ -315,18 +266,134 @@ export function RecentTradesTable({
                       ) : (
                         <p className="text-xs text-slate-400">--</p>
                       )}
-                    </td>
-                  </tr>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${getExchangeTagClass(tradeExchange, true)}`}>
+                        {getExchangeLabel(tradeExchange)}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter ${
+                          trade.side === 'buy'
+                            ? 'bg-emerald-500/10 text-emerald-500'
+                            : 'bg-rose-500/10 text-rose-500'
+                        }`}
+                      >
+                        {trade.side}
+                      </span>
+                      {tradeSegment !== 'all' && (
+                        <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${getTradeTypeTagClass(tradeSegment, true)}`}>
+                          {getTradeTypeLabel(tradeSegment)}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <p className="text-slate-400">Price</p>
+                        <p className="font-mono font-semibold">${formatNumber(trade.price)}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-400">Size</p>
+                        <p className="font-mono font-semibold">{formatNumber(trade.quantity, 4)}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <p className="text-slate-400">Value</p>
+                        <p className="font-mono font-semibold">${formatNumber(value)}</p>
+                      </div>
+                    </div>
+                  </div>
                 )
               })}
-            </tbody>
-          </table>
+            </div>
+
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[880px]">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-primary/5 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                    <th className="px-6 py-4">Asset</th>
+                    <th className="px-6 py-4">Side</th>
+                    <th className="px-6 py-4">Type</th>
+                    <th className="px-6 py-4">Price</th>
+                    <th className="px-6 py-4">Size / Value</th>
+                    <th className="px-6 py-4 text-right">PNL</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-primary/10">
+                  {trades.map((trade) => {
+                    const pnl = trade.realized_pnl ?? 0
+                    const pnlPositive = pnl >= 0
+                    const value = trade.quantity * trade.price
+                    const tradeExchange = normalizeExchange(trade.exchange)
+                    const tradeSegment = mapTradeTypeToSegment(trade.trade_type)
+                    return (
+                      <tr
+                        key={trade.id}
+                        className="hover:bg-slate-50 dark:hover:bg-primary/5 transition-colors"
+                      >
+                        <td className="px-6 py-4">
+                          <p className="text-sm font-bold">{trade.symbol}</p>
+                          <p className="text-[10px] text-slate-400 font-medium uppercase">{formatDate(trade.traded_at)}</p>
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${getExchangeTagClass(tradeExchange, true)}`}>
+                              {getExchangeLabel(tradeExchange)}
+                            </span>
+                            {tradeSegment !== 'all' && (
+                              <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${getTradeTypeTagClass(tradeSegment, true)}`}>
+                                {getTradeTypeLabel(tradeSegment)}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tighter ${
+                              trade.side === 'buy'
+                                ? 'bg-emerald-500/10 text-emerald-500'
+                                : 'bg-rose-500/10 text-rose-500'
+                            }`}
+                          >
+                            {trade.side}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          {tradeSegment === 'all' ? (
+                            <span className="text-xs text-slate-500 font-medium capitalize">{trade.trade_type}</span>
+                          ) : (
+                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${getTradeTypeTagClass(tradeSegment, true)}`}>
+                              {getTradeTypeLabel(tradeSegment)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-medium font-mono">
+                          ${formatNumber(trade.price)}
+                        </td>
+                        <td className="px-6 py-4">
+                          <p className="text-sm font-bold font-mono">{formatNumber(trade.quantity, 4)}</p>
+                          <p className="text-xs text-slate-400 font-mono">${formatNumber(value)}</p>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          {trade.realized_pnl !== null ? (
+                            <p className={`text-sm font-bold font-mono ${pnlPositive ? 'text-emerald-500' : 'text-rose-500'}`}>
+                              {pnlPositive ? '+' : ''}${formatNumber(pnl)}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-slate-400">--</p>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
-      <div className="px-6 py-4 border-t border-slate-200 dark:border-primary/20 flex items-center justify-between gap-4">
+      <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-primary/20 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
         <div />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto">
           <button
             type="button"
             onClick={() => setPage((current) => Math.max(1, current - 1))}

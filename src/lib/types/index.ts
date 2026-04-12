@@ -256,11 +256,14 @@ export type DashboardOverview = {
     d7: number
     d30: number
     d90: number
+    year: number
+    all: number
   }
   winRate: {
     d7: number
     d30: number
     d90: number
+    all: number
   }
   totalTrades: {
     count: number
@@ -268,6 +271,7 @@ export type DashboardOverview = {
     volumeUsdD7: number
     volumeUsdD30: number
     volumeUsdD90: number
+    volumeUsdAll: number
   }
 }
 

@@ -57,6 +57,26 @@ function toDateKey(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
+function aggregateDailyPnl(trades: Trade[], startMs?: number): Map<string, number> {
+  const dailyPnl = new Map<string, number>()
+
+  for (const trade of trades) {
+    if (trade.realized_pnl === null) continue
+
+    const tradedMs = new Date(trade.traded_at).getTime()
+    if (startMs !== undefined && tradedMs < startMs) continue
+
+    const pnl = Number(trade.realized_pnl)
+    if (!Number.isFinite(pnl)) continue
+
+    const dateKey = toDateKey(new Date(trade.traded_at))
+    const current = dailyPnl.get(dateKey) ?? 0
+    dailyPnl.set(dateKey, current + pnl)
+  }
+
+  return dailyPnl
+}
+
 function sumPnlFromDate(trades: Trade[], startDate: Date): number {
   const startMs = startDate.getTime()
   const total = trades.reduce((sum, trade) => {
@@ -69,6 +89,18 @@ function sumPnlFromDate(trades: Trade[], startDate: Date): number {
     const tradedMs = new Date(trade.traded_at).getTime()
     if (tradedMs < startMs) return sum
     return sum + numericPnl
+  }, 0)
+
+  return parseFloat(total.toFixed(8))
+}
+
+function sumPnl(trades: Trade[]): number {
+  const total = trades.reduce((sum, trade) => {
+    if (trade.realized_pnl === null) return sum
+
+    const pnl = Number(trade.realized_pnl)
+    if (!Number.isFinite(pnl)) return sum
+    return sum + pnl
   }, 0)
 
   return parseFloat(total.toFixed(8))
@@ -95,21 +127,7 @@ function sumVolumeByDays(trades: Trade[], days: number): number {
 function calculateWinRateByDays(trades: Trade[], days: number): number {
   const startDate = getWindowStartDate(days)
   const startMs = startDate.getTime()
-  const dailyPnl = new Map<string, number>()
-
-  for (const trade of trades) {
-    if (trade.realized_pnl === null) continue
-
-    const tradedMs = new Date(trade.traded_at).getTime()
-    if (tradedMs < startMs) continue
-
-    const pnl = Number(trade.realized_pnl)
-    if (!Number.isFinite(pnl)) continue
-
-    const dateKey = toDateKey(new Date(trade.traded_at))
-    const current = dailyPnl.get(dateKey) ?? 0
-    dailyPnl.set(dateKey, current + pnl)
-  }
+  const dailyPnl = aggregateDailyPnl(trades, startMs)
 
   let winDays = 0
   for (let offset = 0; offset < days; offset += 1) {
@@ -122,6 +140,16 @@ function calculateWinRateByDays(trades: Trade[], days: number): number {
   }
 
   return parseFloat(((winDays / days) * 100).toFixed(2))
+}
+
+function calculateAllTimeWinRate(trades: Trade[]): number {
+  const dailyPnl = aggregateDailyPnl(trades)
+  if (dailyPnl.size === 0) {
+    return 0
+  }
+
+  const winDays = Array.from(dailyPnl.values()).filter((pnl) => pnl > 0).length
+  return parseFloat(((winDays / dailyPnl.size) * 100).toFixed(2))
 }
 
 function extractBaseAssetFromSymbol(symbol: string): string | null {
@@ -244,12 +272,17 @@ export async function fetchDashboardOverview(
   exchange?: Exchange
 ): Promise<Result<DashboardOverview>> {
   const tradeType = mapSegmentToTradeType(segment)
-  const rangeStart90 = getWindowStartDate(90).toISOString()
+  const rangeStartYear = getWindowStartDate(365).toISOString()
   const rangeEndIso = getWindowEndDate().toISOString()
 
-  const [recentTrades, totals] = await Promise.all([
+  const [yearTrades, allTrades, totals] = await Promise.all([
     getTradesForPNL(supabase, userId, {
-      startDate: rangeStart90,
+      startDate: rangeStartYear,
+      endDate: rangeEndIso,
+      exchange,
+      tradeType,
+    }),
+    getTradesForPNL(supabase, userId, {
       endDate: rangeEndIso,
       exchange,
       tradeType,
@@ -263,22 +296,26 @@ export async function fetchDashboardOverview(
 
   const overview: DashboardOverview = {
     pnl: {
-      today: sumPnlFromDate(recentTrades, getWindowStartDate(1)),
-      d7: sumPnlFromDate(recentTrades, getWindowStartDate(7)),
-      d30: sumPnlFromDate(recentTrades, getWindowStartDate(30)),
-      d90: sumPnlFromDate(recentTrades, getWindowStartDate(90)),
+      today: sumPnlFromDate(yearTrades, getWindowStartDate(1)),
+      d7: sumPnlFromDate(yearTrades, getWindowStartDate(7)),
+      d30: sumPnlFromDate(yearTrades, getWindowStartDate(30)),
+      d90: sumPnlFromDate(yearTrades, getWindowStartDate(90)),
+      year: sumPnl(yearTrades),
+      all: sumPnl(allTrades),
     },
     winRate: {
-      d7: calculateWinRateByDays(recentTrades, 7),
-      d30: calculateWinRateByDays(recentTrades, 30),
-      d90: calculateWinRateByDays(recentTrades, 90),
+      d7: calculateWinRateByDays(yearTrades, 7),
+      d30: calculateWinRateByDays(yearTrades, 30),
+      d90: calculateWinRateByDays(yearTrades, 90),
+      all: calculateAllTimeWinRate(allTrades),
     },
     totalTrades: {
       count: totals.count,
       volumeUsd: totals.volumeUsd,
-      volumeUsdD7: sumVolumeByDays(recentTrades, 7),
-      volumeUsdD30: sumVolumeByDays(recentTrades, 30),
-      volumeUsdD90: sumVolumeByDays(recentTrades, 90),
+      volumeUsdD7: sumVolumeByDays(yearTrades, 7),
+      volumeUsdD30: sumVolumeByDays(yearTrades, 30),
+      volumeUsdD90: sumVolumeByDays(yearTrades, 90),
+      volumeUsdAll: totals.volumeUsd,
     },
   }
 

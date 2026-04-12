@@ -25,11 +25,11 @@ export function ChatMessage({
 }: ChatMessageProps): React.JSX.Element {
   if (message.role === 'user') {
     return (
-      <div className="flex gap-4 justify-end">
-        <div className="max-w-2xl rounded-2xl px-4 py-3 text-sm leading-relaxed bg-primary text-white rounded-tr-none">
+      <div className="flex gap-2 md:gap-4 justify-end">
+        <div className="max-w-[85%] md:max-w-2xl rounded-2xl px-4 py-3 text-[13px] md:text-sm leading-relaxed bg-primary text-white rounded-tr-none">
           {message.content}
         </div>
-        <div className="size-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0 mt-1">
+        <div className="size-7 md:size-8 rounded-lg bg-primary/20 flex items-center justify-center shrink-0 mt-1">
           <span className="material-symbols-outlined text-primary text-base">person</span>
         </div>
       </div>
@@ -42,11 +42,11 @@ export function ChatMessage({
   const hasAssistantContent = message.content.trim().length > 0
 
   return (
-    <div className="flex gap-4 justify-start">
-      <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-1">
+    <div className="flex gap-2 md:gap-4 justify-start">
+      <div className="size-7 md:size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-1">
         <span className="material-symbols-outlined text-primary text-base">smart_toy</span>
       </div>
-      <div className="max-w-2xl flex-1 space-y-2">
+      <div className="min-w-0 max-w-[calc(100%-2.5rem)] md:max-w-2xl flex-1 space-y-2">
         {shouldShowThinkingPanel ? (
           <AgentThinkingPanel
             steps={thinkingSteps}
@@ -56,7 +56,7 @@ export function ChatMessage({
             onToggleCollapsed={handleToggleThinkingCollapsed}
           />
         ) : null}
-        <div className="rounded-2xl px-4 py-3 text-sm leading-relaxed bg-neutral-dark border border-neutral-border text-slate-200 rounded-tl-none">
+        <div className="rounded-2xl px-4 py-3 text-[13px] md:text-sm leading-relaxed bg-neutral-dark border border-neutral-border text-slate-200 rounded-tl-none">
           {hasAssistantContent ? (
             <div className="prose prose-sm prose-invert max-w-none prose-p:my-0 prose-headings:my-0">
               <ReactMarkdown

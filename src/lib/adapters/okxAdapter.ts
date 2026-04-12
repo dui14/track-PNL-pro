@@ -38,6 +38,8 @@ async function fetchWithRetry(url: string, options?: RequestInit, attempt = 0): 
 }
 
 export class OKXAdapter implements ExchangeAdapter {
+  private futuresContractSpecsPromise: Promise<Map<string, OKXFuturesContractSpec>> | null = null
+
   private buildHeaders(
     credentials: ExchangeCredentials,
     method: string,
@@ -85,9 +87,10 @@ export class OKXAdapter implements ExchangeAdapter {
 
   async fetchTrades(credentials: ExchangeCredentials, since?: Date): Promise<ExchangeAdapterTrade[]> {
     const startDate = since ?? new Date(Date.now() - DEFAULT_LOOKBACK_MS)
+    const futuresContractSpecs = await this.getFuturesContractSpecs()
 
     const [fillTrades, fundingTrades] = await Promise.all([
-      this.fetchTradeFills(credentials, startDate),
+      this.fetchTradeFills(credentials, startDate, futuresContractSpecs),
       this.fetchFundingBills(credentials, startDate),
     ])
 
@@ -96,12 +99,13 @@ export class OKXAdapter implements ExchangeAdapter {
       return merged
     }
 
-    return this.fetchBillsArchiveFallback(credentials, startDate)
+    return this.fetchBillsArchiveFallback(credentials, startDate, futuresContractSpecs)
   }
 
   private async fetchTradeFills(
     credentials: ExchangeCredentials,
-    since: Date
+    since: Date,
+    futuresContractSpecs: Map<string, OKXFuturesContractSpec>
   ): Promise<ExchangeAdapterTrade[]> {
     const startTime = since.getTime()
     const now = Date.now()
@@ -136,7 +140,7 @@ export class OKXAdapter implements ExchangeAdapter {
 
           let oldestTs = cursorEnd
           for (const item of list) {
-            const normalized = this.normalizeFill(item)
+            const normalized = this.normalizeFill(item, futuresContractSpecs)
             rows.push(normalized)
 
             const itemTs = Number.parseInt(String(item.ts ?? ''), 10)
@@ -222,7 +226,8 @@ export class OKXAdapter implements ExchangeAdapter {
 
   private async fetchBillsArchiveFallback(
     credentials: ExchangeCredentials,
-    since: Date
+    since: Date,
+    futuresContractSpecs: Map<string, OKXFuturesContractSpec>
   ): Promise<ExchangeAdapterTrade[]> {
     const startTime = since.getTime()
     const now = Date.now()
@@ -254,7 +259,7 @@ export class OKXAdapter implements ExchangeAdapter {
         let oldestTs = cursorEnd
         for (const item of list) {
           if (!['2', '8', '14'].includes(String(item.type ?? ''))) continue
-          rows.push(this.normalizeBill(item))
+          rows.push(this.normalizeBill(item, futuresContractSpecs))
 
           const itemTs = Number.parseInt(String(item.ts ?? ''), 10)
           if (Number.isFinite(itemTs)) {
@@ -334,18 +339,30 @@ export class OKXAdapter implements ExchangeAdapter {
     return result
   }
 
-  private normalizeBill(bill: OKXBill): ExchangeAdapterTrade {
+  private normalizeBill(
+    bill: OKXBill,
+    futuresContractSpecs: Map<string, OKXFuturesContractSpec>
+  ): ExchangeAdapterTrade {
     const pnl = parseFloat(bill.pnl ?? '0')
     const fee = parseFloat(bill.fee ?? '0')
     const amount = pnl + fee
     const side: 'buy' | 'sell' = amount >= 0 ? 'sell' : 'buy'
+    const rawQuantity = parseFloat(bill.sz ?? '0')
+    const rawPrice = parseFloat(bill.px ?? '0')
+    const quantity = this.normalizeFuturesQuantity(
+      bill.instType,
+      bill.instId,
+      rawQuantity,
+      rawPrice,
+      futuresContractSpecs
+    )
 
     return {
       external_trade_id: `okx_bill_${bill.billId}`,
       symbol: (bill.instId ?? '').replace(/-/g, ''),
       side,
-      quantity: Math.abs(parseFloat(bill.sz ?? '0')),
-      price: parseFloat(bill.px ?? '0'),
+      quantity,
+      price: Number.isFinite(rawPrice) ? rawPrice : 0,
       fee: Math.abs(fee),
       fee_currency: bill.ccy ?? 'USDT',
       realized_pnl: amount,
@@ -357,9 +374,13 @@ export class OKXAdapter implements ExchangeAdapter {
     }
   }
 
-  private normalizeFill(fill: OKXFill): ExchangeAdapterTrade {
+  private normalizeFill(
+    fill: OKXFill,
+    futuresContractSpecs: Map<string, OKXFuturesContractSpec>
+  ): ExchangeAdapterTrade {
     const symbol = (fill.instId ?? '').replace(/-/g, '')
     const side: 'buy' | 'sell' = (fill.side ?? '').toLowerCase() === 'sell' ? 'sell' : 'buy'
+    const instType = String(fill.instType ?? '').toUpperCase()
 
     const rawQuantity = parseFloat(fill.fillSz ?? '0')
     const rawPrice = parseFloat(fill.fillPx ?? '0')
@@ -367,15 +388,20 @@ export class OKXAdapter implements ExchangeAdapter {
     const rawPnl = parseFloat(fill.fillPnl ?? '')
     const parsedTs = Number.parseInt(String(fill.ts ?? ''), 10)
 
-    const quantity = Number.isFinite(rawQuantity) ? Math.abs(rawQuantity) : 0
     const price = Number.isFinite(rawPrice) ? rawPrice : 0
+    const quantity = this.normalizeFuturesQuantity(
+      instType,
+      fill.instId,
+      rawQuantity,
+      price,
+      futuresContractSpecs
+    )
     const fee = Number.isFinite(rawFee) ? Math.abs(rawFee) : 0
     const realizedPnl = Number.isFinite(rawPnl) ? rawPnl : null
     const tradedAt = Number.isFinite(parsedTs)
       ? new Date(parsedTs).toISOString()
       : new Date().toISOString()
 
-    const instType = String(fill.instType ?? '').toUpperCase()
     const tradeType = instType === 'SPOT' ? 'spot' : 'futures'
     const tradeId = String(fill.tradeId ?? fill.ordId ?? `${symbol}:${tradedAt}`).trim()
 
@@ -394,6 +420,107 @@ export class OKXAdapter implements ExchangeAdapter {
       traded_at: tradedAt,
       raw_data: fill as unknown as Record<string, unknown>,
     }
+  }
+
+  private async getFuturesContractSpecs(): Promise<Map<string, OKXFuturesContractSpec>> {
+    if (!this.futuresContractSpecsPromise) {
+      this.futuresContractSpecsPromise = this.fetchFuturesContractSpecs()
+    }
+
+    return this.futuresContractSpecsPromise
+  }
+
+  private async fetchFuturesContractSpecs(): Promise<Map<string, OKXFuturesContractSpec>> {
+    const specs = new Map<string, OKXFuturesContractSpec>()
+    const instTypes: Array<'SWAP' | 'FUTURES'> = ['SWAP', 'FUTURES']
+
+    for (const instType of instTypes) {
+      const query = new URLSearchParams({ instType })
+      const path = `/api/v5/public/instruments?${query.toString()}`
+      const response = await fetchWithRetry(`${BASE_URL}${path}`)
+      if (!response.ok) {
+        continue
+      }
+
+      const payload = (await response.json()) as {
+        code: string
+        data?: OKXPublicInstrument[]
+      }
+
+      if (payload.code !== '0' || !Array.isArray(payload.data)) {
+        continue
+      }
+
+      for (const instrument of payload.data) {
+        const instId = String(instrument.instId ?? '').toUpperCase()
+        if (!instId) {
+          continue
+        }
+
+        const ctVal = Number.parseFloat(String(instrument.ctVal ?? ''))
+        if (!Number.isFinite(ctVal) || ctVal <= 0) {
+          continue
+        }
+
+        const [baseCcyRaw, quoteCcyRaw] = instId.split('-')
+        const baseCcy = String(baseCcyRaw ?? '').toUpperCase()
+        const quoteCcy = String(quoteCcyRaw ?? '').toUpperCase()
+        const ctValCcyRaw = String(instrument.ctValCcy ?? '').toUpperCase()
+
+        specs.set(instId, {
+          ctVal,
+          ctValCcy: ctValCcyRaw || null,
+          baseCcy,
+          quoteCcy,
+        })
+      }
+    }
+
+    return specs
+  }
+
+  private normalizeFuturesQuantity(
+    instType: string,
+    instId: string | undefined,
+    rawQuantity: number,
+    price: number,
+    futuresContractSpecs: Map<string, OKXFuturesContractSpec>
+  ): number {
+    const quantity = Number.isFinite(rawQuantity) ? Math.abs(rawQuantity) : 0
+    if (quantity === 0) {
+      return 0
+    }
+
+    const upperInstType = instType.toUpperCase()
+    if (upperInstType !== 'SWAP' && upperInstType !== 'FUTURES') {
+      return quantity
+    }
+
+    const instKey = String(instId ?? '').toUpperCase()
+    if (!instKey) {
+      return quantity
+    }
+
+    const contract = futuresContractSpecs.get(instKey)
+    if (!contract || contract.ctVal <= 0) {
+      return quantity
+    }
+
+    if (contract.ctValCcy && contract.baseCcy && contract.ctValCcy === contract.baseCcy) {
+      return quantity * contract.ctVal
+    }
+
+    if (
+      contract.ctValCcy &&
+      contract.quoteCcy &&
+      contract.ctValCcy === contract.quoteCcy &&
+      Number.isFinite(price) &&
+      price > 0
+    ) {
+      return (quantity * contract.ctVal) / price
+    }
+
+    return quantity
   }
 
   private normalizeFundingBill(bill: OKXBill): ExchangeAdapterTrade {
@@ -486,4 +613,17 @@ type OKXPosition = {
   markPx: string
   upl: string
   lever: string
+}
+
+type OKXPublicInstrument = {
+  instId?: string
+  ctVal?: string
+  ctValCcy?: string
+}
+
+type OKXFuturesContractSpec = {
+  ctVal: number
+  ctValCcy: string | null
+  baseCcy: string
+  quoteCcy: string
 }
