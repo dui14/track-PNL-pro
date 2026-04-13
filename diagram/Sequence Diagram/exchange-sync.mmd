@@ -1,0 +1,23 @@
+sequenceDiagram
+  autonumber
+  participant user as user
+  participant ui as Giao diện
+  participant system as Hệ thống
+  participant adapter as Exchange Adapter
+
+  user->>ui: Yêu cầu đồng bộ tài khoản sàn
+  ui->>system: POST /api/exchange/sync
+  system->>system: Xác thực, kiểm tra payload, giải mã API key
+  system->>adapter: Kiểm tra credentials
+
+  alt Credentials không hợp lệ
+    adapter-->>system: Lỗi xác thực
+    system-->>ui: 4xx hoặc 5xx
+    ui-->>user: Hiển thị lỗi đồng bộ
+  else Credentials hợp lệ
+    system->>adapter: Lấy lịch sử giao dịch
+    adapter-->>system: Danh sách trades chuẩn hóa
+    system->>system: Upsert trades và cập nhật trạng thái sync
+    system-->>ui: 200 và thống kê đồng bộ
+    ui-->>user: Hiển thị kết quả thành công
+  end

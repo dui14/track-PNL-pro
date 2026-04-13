@@ -1,0 +1,21 @@
+flowchart TD
+  A[POST /api/demo/order] --> B[Validate JWT + PlaceDemoOrderSchema]
+  B --> C[derive entryPrice positionNotional quantity]
+  C --> D[demoService.placeDemoOrder]
+  D --> E[getUserDemoBalance]
+  E --> F[validateDemoBalance]
+  F --> G{Du so du?}
+  G -- Khong --> X1[INSUFFICIENT_BALANCE]
+  G -- Co --> H[createDemoTrade status=open]
+  H --> I[updateUserDemoBalance balance-cost]
+  I --> J[201 success]
+
+  K[PATCH /api/demo/order] --> L[Validate CloseDemoOrderSchema]
+  L --> M[demoService.closeDemoOrder]
+  M --> N[getDemoTradeById]
+  N --> O{Trade open?}
+  O -- Khong --> X2[NOT_FOUND or TRADE_NOT_OPEN]
+  O -- Co --> P[calculateDemoRealizedPNL]
+  P --> Q[closeDemoTrade full or partial]
+  Q --> R[updateUserDemoBalance releaseMargin+pnl]
+  R --> S[200 success]

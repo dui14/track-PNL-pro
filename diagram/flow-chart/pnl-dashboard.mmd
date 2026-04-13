@@ -1,0 +1,28 @@
+flowchart TD
+  U[Dashboard UI] --> A[GET /api/pnl/overview]
+  U --> B[GET /api/pnl/summary]
+  U --> C[GET /api/pnl/chart]
+  U --> D[GET /api/pnl/calendar]
+  U --> E[GET /api/pnl/assets]
+
+  A --> S1[pnlService.fetchDashboardOverview]
+  B --> S2[pnlService.fetchPNLSummary]
+  C --> S3[pnlService.fetchPNLChart]
+  D --> S4[pnlService.fetchPNLCalendar]
+  E --> S5[pnlService.fetchAssetDistribution]
+
+  S1 --> DB[tradesDb]
+  S2 --> DB
+  S3 --> DB
+  S4 --> DB
+  S5 --> DB
+
+  S2 --> EN[pnlEngine.calculatePNLSummary]
+  S3 --> EN2[pnlEngine.buildPNLTimeSeries]
+  S4 --> EN3[pnlEngine.buildPNLCalendarDays Months]
+
+  EN --> R1[JSON response]
+  EN2 --> R2[JSON response]
+  EN3 --> R3[JSON response]
+  S1 --> R4[JSON response]
+  S5 --> R5[JSON response]

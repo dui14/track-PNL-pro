@@ -1,0 +1,15 @@
+flowchart TD
+    A[user] --> B[Giao diện]
+    B --> C[Hệ thống /api/ai/chat]
+    C --> D[AI Orchestrator]
+    D --> E{Cần dữ liệu ngoài?}
+    E -- Không --> F[Tạo phản hồi trực tiếp]
+    E -- Có --> G[Chọn tool phù hợp]
+    G --> H[Trade và PNL từ Supabase]
+    G --> I[Crypto news từ RSS]
+    G --> J[Market quotes]
+    H --> K[Tổng hợp kết quả tool]
+    I --> K
+    J --> K
+    K --> L[Tổng hợp phản hồi với LLM]
+    L --> M[SSE stream về Giao diện]

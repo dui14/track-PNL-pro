@@ -1,0 +1,16 @@
+sequenceDiagram
+    autonumber
+    participant user as user
+    participant ui as Giao diện
+    participant system as Hệ thống
+    participant orchestrator as AI Orchestrator
+    participant llm as LLM API
+
+    user->>ui: Gửi câu hỏi
+    ui->>system: POST /api/ai/chat
+    system->>orchestrator: Chuẩn bị messages, tools, model
+    orchestrator->>llm: Chat completion request
+    llm-->>orchestrator: Stream token và tool call
+    orchestrator-->>system: Chunk phản hồi đã xử lý
+    system-->>ui: SSE stream
+    ui-->>user: Cập nhật câu trả lời realtime

@@ -1,0 +1,19 @@
+flowchart TD
+  U[POST /api/exchange/sync] --> A[Validate JWT + body]
+  A --> B[getExchangeAccountById]
+  B --> C{Account ton tai va active?}
+  C -- Khong --> X1[NOT_FOUND or ACCOUNT_INACTIVE]
+  C -- Co --> D[updateSyncStatus syncing]
+  D --> E[getApiKey]
+  E --> F{Co api key?}
+  F -- Khong --> X2[API_KEY_NOT_FOUND]
+  F -- Co --> G[decryptCredentials]
+  G --> H{Decrypt ok?}
+  H -- Khong --> X3[DECRYPTION_FAILED]
+  H -- Co --> I[validateCredentials]
+  I --> J{Hop le?}
+  J -- Khong --> X4[EXCHANGE_* error]
+  J -- Co --> K[fetchTrades from adapter]
+  K --> L[upsertTrades]
+  L --> M[updateLastSynced synced]
+  M --> N[success synced_trades/new_trades]

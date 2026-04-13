@@ -1,0 +1,11 @@
+flowchart TD
+    A[Git Push] --> B[Render Build Trigger]
+    B --> C[Install Dependencies]
+    C --> D[Build Command: pnpm build]
+    D --> E[Start Command: pnpm start]
+    E --> F[Web Service Running]
+    F --> G[Health Check /api/healthz]
+    G --> H{Healthy?}
+    H -- Yes --> I[Serve traffic]
+    H -- No --> J[Restart and inspect logs]
+    K[Env Vars: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, OPENROUTER_API_KEY, MODELS_*] --> F

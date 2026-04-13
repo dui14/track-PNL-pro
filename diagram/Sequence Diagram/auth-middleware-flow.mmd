@@ -1,0 +1,20 @@
+sequenceDiagram
+  autonumber
+  participant user as user
+  participant ui as Giao diện
+  participant system as Hệ thống
+  participant auth as Supabase Auth
+
+  user->>ui: Truy cập trang cần đăng nhập
+  ui->>system: GET /dashboard
+  system->>auth: Kiểm tra session
+
+  alt Chưa đăng nhập
+    auth-->>system: Không có user hợp lệ
+    system-->>ui: Redirect /login?next=/dashboard
+    ui-->>user: Hiển thị trang đăng nhập
+  else Đã đăng nhập
+    auth-->>system: User hợp lệ
+    system-->>ui: Cho phép truy cập
+    ui-->>user: Hiển thị dashboard
+  end

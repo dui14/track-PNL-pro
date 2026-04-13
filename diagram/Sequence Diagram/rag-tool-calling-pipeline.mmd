@@ -1,0 +1,21 @@
+sequenceDiagram
+    autonumber
+    participant user as user
+    participant ui as Giao diện
+    participant system as Hệ thống
+    participant orchestrator as AI Orchestrator
+
+    user->>ui: Gửi câu hỏi
+    ui->>system: Gửi yêu cầu chat
+    system->>orchestrator: Chuyển câu hỏi và ngữ cảnh
+    orchestrator->>orchestrator: Phân tích yêu cầu
+
+    alt Cần truy xuất dữ liệu
+        orchestrator->>system: Yêu cầu lấy dữ liệu liên quan
+        system->>system: Truy vấn DB/API tích hợp
+        system-->>orchestrator: Trả dữ liệu đã chuẩn hóa
+    end
+
+    orchestrator-->>system: Trả nội dung phản hồi
+    system-->>ui: Stream kết quả qua SSE
+    ui-->>user: Hiển thị câu trả lời

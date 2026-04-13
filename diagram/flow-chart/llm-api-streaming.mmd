@@ -1,0 +1,9 @@
+flowchart LR
+    A[user] --> B[Giao diện]
+    B --> C[Hệ thống /api/ai/chat]
+    C --> D[AI Orchestrator]
+    D --> E[LLM API]
+    E --> F[Chunk token hoặc tool call]
+    F --> G[Hệ thống chuẩn hóa event]
+    G --> H[SSE stream]
+    H --> I[Giao diện cập nhật realtime]

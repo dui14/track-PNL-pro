@@ -1,0 +1,18 @@
+flowchart TD
+  U[POST /api/exchange/connect] --> A[Validate JWT + body]
+  A --> B{exchange hop le?}
+  B -- Khong --> X1[400 VALIDATION_ERROR]
+  B -- Co --> C[check exchangeAccountExists]
+  C --> D{Da ton tai?}
+  D -- Co --> X2[409 CONFLICT]
+  D -- Khong --> E[createExchangeAdapter]
+  E --> F[validateCredentials]
+  F --> G{Hop le?}
+  G -- Khong --> X3[400 or 502]
+  G -- Co --> H[check withdraw permission]
+  H --> I{Co quyen rut tien?}
+  I -- Co --> X4[400 WITHDRAW_PERMISSION_DETECTED]
+  I -- Khong --> J[encrypt key/secret/passphrase/proxy]
+  J --> K[create exchange_accounts]
+  K --> L[create api_keys]
+  L --> M[201 success]

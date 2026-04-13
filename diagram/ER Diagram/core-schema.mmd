@@ -1,0 +1,112 @@
+erDiagram
+  AUTH_USERS {
+    uuid id PK
+    text email
+  }
+
+  USERS {
+    uuid id PK
+    text email
+    text display_name
+    text avatar_url
+    numeric demo_balance
+    timestamptz created_at
+    timestamptz updated_at
+  }
+
+  EXCHANGE_ACCOUNTS {
+    uuid id PK
+    uuid user_id FK
+    text exchange
+    text label
+    boolean is_active
+    text sync_status
+    text sync_error
+    timestamptz last_synced
+    timestamptz created_at
+  }
+
+  API_KEYS {
+    uuid id PK
+    uuid exchange_account_id FK
+    text key_encrypted
+    text secret_encrypted
+    text passphrase_encrypted
+    text proxy_encrypted
+    text key_iv
+    text secret_iv
+    text passphrase_iv
+    text proxy_iv
+    int key_version
+    timestamptz created_at
+  }
+
+  TRADES {
+    uuid id PK
+    uuid exchange_account_id FK
+    uuid user_id FK
+    text external_trade_id
+    text symbol
+    text side
+    numeric quantity
+    numeric price
+    numeric fee
+    text fee_currency
+    numeric realized_pnl
+    numeric funding_fee
+    text income_type
+    text trade_type
+    timestamptz traded_at
+    jsonb raw_data
+    timestamptz created_at
+  }
+
+  DEMO_TRADES {
+    uuid id PK
+    uuid user_id FK
+    text symbol
+    text side
+    text order_type
+    text margin_mode
+    int leverage
+    numeric quantity
+    numeric entry_price
+    numeric initial_margin
+    numeric position_notional
+    numeric take_profit
+    numeric stop_loss
+    numeric market_price_at_open
+    numeric exit_price
+    numeric realized_pnl
+    text status
+    timestamptz opened_at
+    timestamptz closed_at
+    timestamptz created_at
+  }
+
+  CHAT_CONVERSATIONS {
+    uuid id PK
+    uuid user_id FK
+    text title
+    timestamptz created_at
+    timestamptz updated_at
+  }
+
+  CHAT_MESSAGES {
+    uuid id PK
+    uuid conversation_id FK
+    text role
+    text content
+    int tokens_used
+    jsonb analysis_meta
+    timestamptz created_at
+  }
+
+  AUTH_USERS ||--|| USERS : extends
+  USERS ||--o{ EXCHANGE_ACCOUNTS : owns
+  EXCHANGE_ACCOUNTS ||--o{ API_KEYS : secures
+  USERS ||--o{ TRADES : owns
+  EXCHANGE_ACCOUNTS ||--o{ TRADES : imports
+  USERS ||--o{ DEMO_TRADES : simulates
+  USERS ||--o{ CHAT_CONVERSATIONS : starts
+  CHAT_CONVERSATIONS ||--o{ CHAT_MESSAGES : contains

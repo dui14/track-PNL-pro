@@ -1,0 +1,14 @@
+flowchart TD
+  A[POST /api/ai/chat] --> B[Validate JWT + ChatMessageSchema]
+  B --> C[startOrContinueChat]
+  C --> D{conversationId co san?}
+  D -- Co --> E[getConversationById]
+  D -- Khong --> F[createConversation]
+  E --> G[getConversationMessages]
+  F --> G
+  G --> H[createChatMessage role=user]
+  H --> I[runAgentLoop]
+  I --> J[LLM provider stream]
+  J --> K[emit SSE content_chunk tool events]
+  K --> L[createChatMessage role=assistant]
+  L --> M[SSE done]

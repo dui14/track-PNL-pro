@@ -1,0 +1,21 @@
+sequenceDiagram
+  autonumber
+  participant user as user
+  participant ui as Giao diện
+  participant system as Hệ thống
+  participant orchestrator as AI Orchestrator
+
+  user->>ui: Gửi câu hỏi
+  ui->>system: POST /api/ai/chat
+  system->>system: Xác thực và kiểm tra payload
+  system->>orchestrator: Khởi tạo hoặc tiếp tục hội thoại
+
+  loop Streaming phản hồi
+    orchestrator-->>system: Chunk nội dung và tool event
+    system-->>ui: SSE event
+    ui-->>user: Cập nhật câu trả lời theo thời gian thực
+  end
+
+  orchestrator-->>system: Hoàn tất phản hồi
+  system-->>ui: SSE completed
+  ui-->>user: Hiển thị kết quả cuối

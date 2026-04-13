@@ -1,0 +1,27 @@
+sequenceDiagram
+  autonumber
+  participant user as user
+  participant ui as Giao diện
+  participant system as Hệ thống
+  participant engine as Demo Engine
+
+  user->>ui: Tạo lệnh demo
+  ui->>system: POST /api/demo/order
+  system->>engine: Kiểm tra số dư và tính chi phí
+
+  alt Không đủ số dư
+    engine-->>system: INSUFFICIENT_BALANCE
+    system-->>ui: 400
+    ui-->>user: Báo lỗi không đủ số dư
+  else Hợp lệ
+    engine-->>system: Lệnh hợp lệ
+    system-->>ui: 201 tạo lệnh thành công
+    ui-->>user: Hiển thị lệnh open
+  end
+
+  user->>ui: Đóng lệnh demo
+  ui->>system: PATCH /api/demo/order
+  system->>engine: Tính realized PNL
+  engine-->>system: Trạng thái đóng lệnh và số dư mới
+  system-->>ui: 200 close hoặc partial close
+  ui-->>user: Cập nhật kết quả giao dịch

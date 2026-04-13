@@ -1,0 +1,13 @@
+sequenceDiagram
+  autonumber
+  participant user as user
+  participant ui as Giao diện
+  participant system as Hệ thống
+  participant engine as PNL Engine
+
+  user->>ui: Mở dashboard và chọn bộ lọc
+  ui->>system: GET overview, summary, chart, calendar, assets
+  system->>engine: Tổng hợp số liệu PNL theo bộ lọc
+  engine-->>system: Trả metrics, chuỗi thời gian, phân bổ tài sản
+  system-->>ui: JSON dashboard
+  ui-->>user: Hiển thị cards, chart, calendar

@@ -1,0 +1,11 @@
+flowchart TD
+  A[Request vao route] --> B{Route public?}
+  B -- Co --> Z[Allow]
+  B -- Khong --> C{Route protected?}
+  C -- Khong --> Z
+  C -- Co --> D[Supabase auth.getUser]
+  D --> E{User ton tai?}
+  E -- Co --> Z
+  E -- Khong --> F{API route?}
+  F -- Co --> G[Return 401]
+  F -- Khong --> H[Redirect /login?next=path]
