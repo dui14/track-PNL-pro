@@ -23,7 +23,7 @@ services:
         sync: false
       - key: ENCRYPTION_MASTER_KEY
         sync: false
-      - key: OPENAI_API_KEY
+      - key: OPENROUTER_API_KEY
         sync: false
       - key: MODELS_QWEN
         value: qwen/qwen3.5-9b
