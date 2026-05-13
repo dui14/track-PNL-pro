@@ -1,184 +1,87 @@
 # Track PNL Pro Documentation
 
-Nền tảng web thống nhất cho phép trader crypto theo dõi PNL trên nhiều sàn giao dịch tập trung, mô phỏng giao dịch không rủi ro và tư vấn chiến lược với AI assistant.
+A unified web platform enabling crypto traders to track PNL across multiple centralized exchanges, simulate risk-free trading, and receive strategic advice via an integrated AI assistant.
 
 ---
 
-## Mục lục
+## Table of Contents
 
-- [Tổng quan](#tổng-quan)
-- [Tính năng chính](#tính-năng-chính)
+- [Overview](#overview)
+- [Key Features](#key-features)
 - [Tech Stack](#tech-stack)
-- [Yêu cầu hệ thống](#yêu-cầu-hệ-thống)
-- [Cài đặt](#cài-đặt)
-- [Biến môi trường](#biến-môi-trường)
-- [Scripts](#scripts)
-- [Sàn giao dịch hỗ trợ](#sàn-giao-dịch-hỗ-trợ)
-- [Core Features](#core-features)
+- [Supported Exchanges](#supported-exchanges)
 - [Documentation](#documentation)
 
 ---
 
-## Tổng quan
+## Overview
 
-Track PNL Pro giải quyết vấn đề dữ liệu giao dịch phân tán trên nhiều sàn bằng cách tổng hợp PNL từ nhiều CEX vào một giao diện duy nhất. Ngoài ra còn cung cấp môi trường demo trading không rủi ro và AI assistant tích hợp LLM.
+Track PNL Pro addresses the challenge of fragmented trading data by aggregating PNL from multiple Centralized Exchanges (CEXs) into a single interface. The platform also provides a risk-free demo trading environment and an AI assistant powered by advanced LLMs.
 
-Người dùng mục tiêu: Trader crypto đa sàn (Binance, OKX, Bybit, Bitget, Gate.io) cần theo dõi PNL tự động, mô phỏng chiến lược và tư vấn thị trường từ AI.
+**Target Audience:** Multi-exchange crypto traders (Binance, OKX, Bybit, Bitget, Gate.io) seeking automated PNL tracking, strategy simulation, and AI-driven market insights.
 
 ---
 
-## Tính năng chính
+## Key Features
 
 ### Dashboard
-- Kết nối exchange accounts qua read-only API keys
-- Fetch và chuẩn hoá lịch sử giao dịch đã đóng từ các sàn
-- Tính toán realized PNL theo từng giao dịch và tổng hợp theo kỳ (Day / Week / Month / Year / All-time)
-- Hiển thị win rate, tổng số lệnh và số dư portfolio theo sàn
-- PNL Calendar: Calendar heatmap hiển thị lợi nhuận theo ngày và theo tháng với điều hướng thời gian
-- Biểu đồ xu hướng PNL (line chart, Recharts)
-- Tổng số dư quy đổi ra USD
+- **Exchange Connectivity:** Connect accounts via read-only API keys.
+- **Data Normalization:** Fetch and standardize closed trade history across supported exchanges.
+- **PNL Calculation:** Calculate realized PNL per trade and aggregate by timeframes (Day / Week / Month / Year / All-time).
+- **Performance Metrics:** Display win rate, total trade count, and portfolio balance per exchange.
+- **PNL Calendar:** Heatmap calendar visualizing daily/monthly profits with historical navigation.
+- **Visual Analytics:** PNL trend charts and data visualization via Recharts.
+- **Unified Portfolio:** Total aggregated balance converted to USD equivalent.
 
 ### Demo Trading
-- **TradingView chart** nhúng trực tiếp (live data, candlestick)
-- Đặt lệnh mô phỏng: Market và Limit orders
-- Bảng vị thế mở (Open Positions) với nút đóng lệnh
-- **Lịch sử lệnh** (Order History) — tất cả lệnh đã đóng với PNL thực
-- **Lịch sử giao dịch** (Trade History) — toàn bộ lệnh mua/bán theo thứ tự thời gian
-- Số dư ảo khởi tạo mặc định: **10,000 USDT** mỗi user
-- Tính PNL khi đóng vị thế (có trừ phí giao dịch 0.1%)
-- Lưu toàn bộ lịch sử vào database
+- **Integrated Charts:** Embedded TradingView widget with live candlestick data.
+- **Order Simulation:** Support for Market and Limit orders in a sandbox environment.
+- **Position Management:** Real-time Open Positions dashboard with one-click closing.
+- **Historical Logs:** Detailed Order History and Trade History with realized PNL.
+- **Virtual Capital:** Default initial balance of 10,000 USDT per user.
+- **Fee Simulation:** Realistic PNL calculation including a 0.1% simulated trading fee.
+- **Data Persistence:** All simulated activities are synchronized with the database.
 
 ### Ask AI
-- Chat interface cho câu hỏi giao dịch, phân tích chiến lược, giải thích PNL
-- Streaming responses qua Server-Sent Events (SSE)
-- Tích hợp LLM: OpenAI / Groq / Anthropic
-- Lịch sử chat lưu trong database
-- Sidebar danh sách conversation để tiếp tục chat cũ
+- **Conversational Interface:** Specialized chat for trading queries, strategy analysis, and PNL interpretation.
+- **Real-time Streaming:** Low-latency responses powered by Server-Sent Events (SSE).
+- **LLM Integration:** Compatible with OpenAI, Groq, and Anthropic models.
+- **Context Management:** Full conversation history with a sidebar for session management.
 
 ### User Profile
-- Cập nhật tên hiển thị, email và avatar (Supabase Storage)
-- Đổi mật khẩu cho tài khoản email
-- Quản lý API keys exchange: thêm, xem, xoá
-- Bật/tắt sync theo sàn
+- **Account Settings:** Update display name, email, and avatar (hosted on Supabase Storage).
+- **Security:** Password management for email-based accounts.
+- **API Management:** CRUD operations for connected exchange API keys.
+- **Sync Control:** Toggle automated data synchronization for individual exchanges.
 
 ### Authentication
-- Google OAuth qua Supabase Auth
-- Email + Password qua Supabase Auth
-- Session quản lý qua Supabase JWT tokens
-- Protected routes enforce server-side qua Next.js middleware
+- **OAuth Integration:** Google OAuth via Supabase Auth.
+- **Standard Auth:** Email/Password authentication via Supabase Auth.
+- **Session Handling:** Secure session management via Supabase JWT tokens.
+- **Route Protection:** Server-side route enforcement via Next.js middleware.
 
 ---
 
 ## Tech Stack
 
-| Layer | Công nghệ |
+| Layer | Technology |
 |---|---|
 | Framework | Next.js 15 (App Router) |
-| Language | TypeScript 5 (strict mode) |
+| Language | TypeScript 5 (Strict Mode) |
 | Styling | TailwindCSS 3 |
 | Charts | Recharts 2 + TradingView Widget |
 | Forms | React Hook Form 7 + Zod 3 |
 | Database | Supabase PostgreSQL |
 | Auth | Supabase Auth |
 | Storage | Supabase Storage |
-| Hosting | Vercel |
+| Hosting | Render |
 | Package Manager | pnpm |
 
 ---
 
-## Yêu cầu hệ thống
+## Supported Exchanges
 
-- **Node.js** >= 20.0.0
-- **pnpm** >= 10.0.0
-- Một **Supabase project** (cloud hoặc local)
-- Một **LLM API key** (OpenAI, Groq hoặc Anthropic)
-
-Install pnpm:
-```bash
-npm install -g pnpm
-```
-
----
-
-## Cài đặt
-
-### 1. Clone repository
-
-```bash
-git clone <https://github.com/dui14/track-PNL-pro.git>
-cd track-PNL-pro
-```
-
-### 2. Install dependencies
-
-```bash
-cd src
-pnpm install
-```
-
-### 3. Cấu hình biến môi trường
-
-```bash
-cp .env.example .env.local
-```
-
-Xem phần [Biến môi trường](#biến-môi-trường) để biết chi tiết từng biến.
-
-### 4. Setup database
-
-Xem phần [Database Setup](#database-setup).
-
-### 5. Chạy development server
-
-```bash
-pnpm dev
-```
-
-App chạy tại [http://localhost:3000](http://localhost:3000).
-
----
-
-## Biến môi trường
-
-Tạo file `.env.local` trong thư mục `src/`:
-
-```env
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=https://<your-project>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
-SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
-
-# LLM API (OpenAI, Groq hoặc Anthropic)
-OPENAI_API_KEY=<your-llm-api-key>
-MODELS_QWEN=qwen/qwen3.5-9b
-MODELS_CLAUDE=anthropic/claude-sonnet-4.6
-MODELS_GEMINI=google/gemini-3-flash-preview
-MODELS_GROK=x-ai/grok-4.1-fast
-MODELS_DEEPSEEK=deepseek/deepseek-v3.2
-MODELS_GPT=openai/gpt-5.4
-
-# App URL
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
-
----
-
-## Scripts
-
-Chạy tất cả lệnh từ thư mục `src/`.
-
-| Lệnh | Mô tả |
-|---|---|
-| `pnpm dev` | Dev server trên port 3000 |
-| `pnpm build` | Build production bundle |
-| `pnpm start` | Chạy production server |
-| `pnpm lint` | Chạy ESLint |
-
----
-
-## Sàn giao dịch hỗ trợ
-
-| Sàn | Trade History | Balance |
+| Exchange | Trade History | Balance |
 |---|---|---|
 | Binance | REST API | REST API |
 | OKX | REST API | REST API |
@@ -186,51 +89,12 @@ Chạy tất cả lệnh từ thư mục `src/`.
 | Bitget | REST API | REST API |
 | Gate.io | REST API | REST API |
 
-Tất cả API keys exchange phải là **read-only** (không cần quyền withdrawal).
-
-
-## Core Features
-
-### Dashboard
-- Connect exchange accounts via read-only API keys
-- Fetch and normalize closed trade history from exchanges
-- Calculate realized PNL per trade and aggregate by time period (Day / Week / Month / Year / All-time)
-- Display win rate, total trade count, and portfolio balance per exchange
-- PNL trend charts (line / bar via Recharts)
-- Aggregated total balance in USD equivalent
-
-### Demo Trading
-- TradingView chart widget (candlestick) embedded
-- Real-time price data via Binance WebSocket public streams
-- Simulated order placement: Market and Limit orders
-- Open orders management and trade history
-- Virtual balance initialized per user (default: 10,000 USDT)
-- Simulated PNL calculated on demo position close
-
-### Ask AI
-- Chat interface for trading questions, strategy advice, PNL interpretation, and risk management
-- Streaming responses via Server-Sent Events (SSE)
-- LLM integration: OpenAI / Groq / Anthropic
-- Conversation history stored in database
-- Sidebar with conversation list to reload and continue past chats
-
-### User Profile
-- Update display name, email, and avatar (stored in Supabase Storage)
-- Change password for email/password accounts
-- Manage connected exchange API keys (add, view, delete)
-- Enable / disable sync per exchange
-
-### Authentication
-- Google OAuth via Supabase Auth
-- Email + Password via Supabase Auth
-- Session managed via Supabase JWT tokens
-- Protected routes enforced server-side via Next.js middleware
+> [!IMPORTANT]
+> All exchange API keys must be set to **read-only**. For security reasons, withdrawal permissions must not be enabled.
 
 ---
 
 ## Documentation
+
 - Architecture: `docs/ARCHITECTURE.md`
-- Project Tree: `docs/PROJECT-TREE.md`
-- Report Outline: `docs/REPORT-OUTLINE.md`
-- Database schema: `database/schema.sql`
-- Mermaid diagrams: `diagram/`
+- Exchange Integration Research: `docs/deep-research-report.md` (Technical guide on utilizing REST APIs from various crypto exchanges)

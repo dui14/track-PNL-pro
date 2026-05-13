@@ -1,7 +1,5 @@
 # Kiến Trúc Hệ Thống - Track PNL Pro
 
-Tài liệu này mô tả kiến trúc thực tế đang chạy trong codebase `src/`.
-
 ## 1. Tổng quan kiến trúc
 
 ```mermaid
@@ -47,7 +45,7 @@ Quy tắc vận hành:
 - AI chat: `src/app/api/ai/*`, `src/lib/services/aiService.ts`, `src/lib/agent-loop.ts`
 - Profile: `src/app/api/profile/*`, `src/lib/services/profileService.ts`
 
-## 4. API surface (thực tế)
+  ## 4. API surface (thực tế)
 
 - AI: `/api/ai/chat`, `/api/ai/conversations`, `/api/ai/conversations/[id]`, `/api/ai/conversations/[id]/messages`
 - Auth: `/api/auth/account`, `/api/auth/callback`
@@ -56,16 +54,3 @@ Quy tắc vận hành:
 - PNL: `/api/pnl/overview`, `/api/pnl/summary`, `/api/pnl/chart`, `/api/pnl/calendar`, `/api/pnl/trades`, `/api/pnl/assets`
 - Profile: `/api/profile`, `/api/profile/avatar`
 - Health: `/api/healthz`, `/api/ping`
-
-## 5. Dữ liệu và bảo mật
-
-Nguồn dữ liệu chính:
-
-- Supabase tables: `users`, `exchange_accounts`, `api_keys`, `trades`, `demo_trades`, `chat_conversations`, `chat_messages`
-- API keys được mã hóa tại `src/lib/adapters/encryption.ts`
-
-Kiểm soát bảo mật:
-
-- Middleware chặn route protected khi chưa đăng nhập.
-- API keys không trả về client.
-- RLS và kiểm tra `user_id` xuyên suốt các truy vấn dữ liệu.

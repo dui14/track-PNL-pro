@@ -1,4 +1,6 @@
 # Tóm lược và Kiến trúc tổng quát
+> [!IMPORTANT]
+> This reports was created from NotebookLM and may contain formatting issues. Please refer to the original source for accurate information.
 
 Để xây dựng hệ thống **tracking PnL** từ lịch sử giao dịch (spot/futures) cho 4 sàn (Binance, OKX, Bybit, Bitget), ta cần chọn **đúng endpoint PnL-ready** nếu có, hoặc ngược lại là **lấy lịch sử giao dịch để tự tính PnL**. Mỗi sàn có cấu trúc API và cách phân trang riêng biệt, do đó ta nên thiết kế **Adapter Layer** để chuẩn hóa dữ liệu và sau đó đẩy về _PnL Engine_. 
 
