@@ -23,7 +23,7 @@ src/.env.*.local
 keydata.env
 
 # MCP Config
-mcp/mcp-config.json
+.vscode\mcp.json
 
 # TypeScript Build Cache
 src/tsconfig.tsbuildinfo
@@ -83,3 +83,19 @@ test-results/
 *.pem
 *.key
 *.cert
+
+# Markdown
+.github/
+agents/
+ai/
+ai-context/
+api/
+backend/
+frontend/
+database/
+diagram/
+review/
+spec/
+testing/
+workflow/
+AGENT.md
