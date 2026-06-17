@@ -85,7 +85,7 @@ test-results/
 *.cert
 
 # Markdown
-.github/
+.github/copilot-instructions.md
 agents/
 ai/
 ai-context/
